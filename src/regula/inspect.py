@@ -63,12 +63,23 @@ def render_preview(output_dir: Path) -> str:
 
     glossary_by_term = {e.normalised_term: e for e in glossary.entries}
 
+    status_pill = (
+        "<span class='ok'>passed</span>"
+        if document.pipeline_passed
+        else "<span class='fail'>FAILED</span>"
+    )
+    summary_line = (
+        f"{document.page_count} pages · {document.chunk_count} chunks · "
+        f"validation {status_pill}"
+    )
+
     return _PAGE.format(
         title=html.escape(document.title),
         doc_id=html.escape(document.doc_id),
+        summary=summary_line,
         meta=_render_doc_meta(document),
         toc=_render_toc(toc.entries),
-        chunks=_render_chunks(chunks, refs_index, glossary_by_term),
+        chunks=_render_chunks(chunks, refs_index, glossary_by_term, document.doc_id),
         deferred=_render_deferred(deferred),
     )
 
@@ -84,20 +95,11 @@ def write_preview(output_dir: Path, out_path: Path | None = None) -> Path:
 
 
 def _render_doc_meta(doc: DocumentMeta) -> str:
+    """Detailed doc metadata — collapsed by default."""
     rows = [
-        ("doc_id", doc.doc_id),
-        ("title", doc.title),
-        ("edition", doc.edition),
-        ("jurisdiction", doc.jurisdiction),
-        ("legal status", doc.legal_status),
-        ("pages", str(doc.page_count)),
-        ("chunks", str(doc.chunk_count)),
-        (
-            "pipeline",
-            "<span class='ok'>passed</span>"
-            if doc.pipeline_passed
-            else "<span class='fail'>FAILED</span>",
-        ),
+        ("edition", html.escape(doc.edition)),
+        ("jurisdiction", html.escape(doc.jurisdiction)),
+        ("legal status", html.escape(doc.legal_status)),
         ("regula", html.escape(doc.regula_version)),
         (
             "parsers",
@@ -112,7 +114,12 @@ def _render_doc_meta(doc: DocumentMeta) -> str:
     body = "".join(
         f"<tr><th>{html.escape(k)}</th><td>{v}</td></tr>" for k, v in rows
     )
-    return f"<table class='doc-meta'>{body}</table>"
+    return (
+        "<details class='doc-meta-details'>"
+        "<summary>more details</summary>"
+        f"<table class='doc-meta'>{body}</table>"
+        "</details>"
+    )
 
 
 # --- TOC sidebar ---------------------------------------------------------
@@ -128,9 +135,9 @@ def _render_toc_list(entries: list[TOCEntry]) -> str:
     items: list[str] = []
     for e in entries:
         item = (
-            f"<li><a href='#{html.escape(e.heading_chunk_id)}'>"
+            f"<li><a href='#{html.escape(e.heading_chunk_id)}' "
+            f"title='order_index [{e.first_order_index}..{e.last_order_index}]'>"
             f"{html.escape(e.label)}</a>"
-            f"<span class='oi'>oi=[{e.first_order_index}..{e.last_order_index}]</span>"
         )
         if e.children:
             item += _render_toc_list(e.children)
@@ -146,9 +153,10 @@ def _render_chunks(
     chunks: list[Chunk],
     refs_index: ReferencesIndex,
     glossary_by_term: dict[str, GlossaryEntry],
+    doc_id: str,
 ) -> str:
     return "\n".join(
-        _render_chunk(c, refs_index, glossary_by_term) for c in chunks
+        _render_chunk(c, refs_index, glossary_by_term, doc_id) for c in chunks
     )
 
 
@@ -156,6 +164,7 @@ def _render_chunk(
     chunk: Chunk,
     refs_index: ReferencesIndex,
     glossary_by_term: dict[str, GlossaryEntry],
+    doc_id: str,
 ) -> str:
     text_html = _render_chunk_text(chunk, glossary_by_term)
     if chunk.type is ChunkType.SECTION_HEADING:
@@ -166,15 +175,14 @@ def _render_chunk(
     else:
         body = f"<p class='text'>{text_html}</p>"
 
-    meta_strip = _render_chunk_meta_strip(chunk, refs_index)
+    meta_strip = _render_chunk_meta_strip(chunk, refs_index, doc_id)
     json_dump = html.escape(chunk.model_dump_json(indent=2))
 
     return (
         f"<article class='chunk chunk-{chunk.type.value}' "
         f"id='{html.escape(chunk.chunk_id)}'>"
         f"{body}{meta_strip}"
-        f"<details class='json'><summary>show JSON</summary>"
-        f"<pre>{json_dump}</pre></details>"
+        f"<pre class='json'>{json_dump}</pre>"
         f"</article>"
     )
 
@@ -262,60 +270,68 @@ def _term_markers(
     return markers
 
 
-def _render_chunk_meta_strip(chunk: Chunk, refs_index: ReferencesIndex) -> str:
+def _short_id(chunk_id: str, doc_id: str) -> str:
+    """Strip the ``<doc_id>-`` prefix off a chunk_id for display."""
+    prefix = f"{doc_id}-"
+    return chunk_id[len(prefix):] if chunk_id.startswith(prefix) else chunk_id
+
+
+def _render_chunk_meta_strip(
+    chunk: Chunk, refs_index: ReferencesIndex, doc_id: str
+) -> str:
+    """Compact one-line metadata. Hidden by default; revealed on hover or
+    via the "Show metadata" toggle at the top. Full chunk_id lives in the
+    code tag's title attribute so hover-tooltip still gives the long form."""
     pages = (
         f"p{chunk.page_start}"
         if chunk.page_start == chunk.page_end
         else f"p{chunk.page_start}–{chunk.page_end}"
     )
+    short = _short_id(chunk.chunk_id, doc_id)
     parts = [
-        f"#{chunk.order_index}",
-        f"<code>{html.escape(chunk.chunk_id)}</code>",
+        f"<span class='oi'>#{chunk.order_index}</span>",
+        f"<code title='{html.escape(chunk.chunk_id)}'>{html.escape(short)}</code>",
         f"<span class='type-tag'>{chunk.type.value}</span>",
         pages,
     ]
-    if chunk.section_path:
-        parts.append(
-            "<span class='sec'>"
-            + html.escape(" › ".join(chunk.section_path))
-            + "</span>"
-        )
 
     n_refs = len(chunk.references_out)
     if n_refs:
         n_internal = sum(1 for r in chunk.references_out if r.target_chunk_id)
         n_external = sum(1 for r in chunk.references_out if r.external_id)
         n_unresolved = n_refs - n_internal - n_external
-        ref_summary = f"refs out: {n_refs}"
         details: list[str] = []
         if n_internal:
-            details.append(f"{n_internal} internal")
+            details.append(f"{n_internal}→")
         if n_external:
-            details.append(f"{n_external} external")
+            details.append(f"{n_external}⊕")
         if n_unresolved:
-            details.append(f"<span class='fail'>{n_unresolved} unresolved</span>")
-        if details:
-            ref_summary += " (" + ", ".join(details) + ")"
-        parts.append(ref_summary)
+            details.append(f"<span class='fail'>{n_unresolved}?</span>")
+        parts.append(
+            "<span class='refs' title='refs out: internal→ external⊕ unresolved?'>"
+            + " ".join(details)
+            + "</span>"
+        )
 
     backlinks = refs_index.by_target.get(chunk.chunk_id, [])
     if backlinks:
+        n = len(backlinks)
         links = ", ".join(
             f"<a href='#{html.escape(b.source_chunk_id)}'>"
-            f"{html.escape(b.source_chunk_id.rsplit('-', 1)[-1])}</a>"
-            for b in backlinks[:6]
+            f"{html.escape(_short_id(b.source_chunk_id, doc_id))}</a>"
+            for b in backlinks[:4]
         )
-        more = f" +{len(backlinks) - 6}" if len(backlinks) > 6 else ""
-        parts.append(f"backlinks: {links}{more}")
+        more = f" +{n - 4}" if n > 4 else ""
+        parts.append(
+            f"<span class='backlinks' title='cited by {n} chunk(s)'>← {links}{more}</span>"
+        )
 
     if chunk.defined_terms_used:
-        parts.append("terms: " + ", ".join(map(html.escape, chunk.defined_terms_used)))
-
-    if chunk.meta.source_spans:
-        span_count = len(chunk.meta.source_spans)
-        first_bbox = chunk.meta.source_spans[0].bbox
-        bbox_str = ", ".join(f"{c:.0f}" for c in first_bbox)
-        parts.append(f"spans: {span_count} ({bbox_str}…)")
+        parts.append(
+            "<span class='terms' title='glossary terms used'>"
+            + html.escape(", ".join(chunk.defined_terms_used))
+            + "</span>"
+        )
 
     return "<div class='meta'>" + " · ".join(parts) + "</div>"
 
@@ -325,7 +341,12 @@ def _render_chunk_meta_strip(chunk: Chunk, refs_index: ReferencesIndex) -> str:
 
 def _render_deferred(deferred: DeferredFeatureList) -> str:
     if not deferred.features:
-        return "<p class='empty'>(none — pipeline is complete)</p>"
+        return (
+            "<details class='deferred-details'>"
+            "<summary>Deferred capabilities (0)</summary>"
+            "<p class='empty'>(none — pipeline is complete)</p>"
+            "</details>"
+        )
     items = []
     for f in deferred.features:
         observed = (
@@ -338,7 +359,12 @@ def _render_deferred(deferred: DeferredFeatureList) -> str:
             f"<span class='phase'>{html.escape(f.target_phase)}</span>"
             f"{observed}<br>{html.escape(f.description)}</li>"
         )
-    return f"<ul class='deferred-list'>{''.join(items)}</ul>"
+    return (
+        "<details class='deferred-details'>"
+        f"<summary>Deferred capabilities ({len(deferred.features)})</summary>"
+        f"<ul class='deferred-list'>{''.join(items)}</ul>"
+        "</details>"
+    )
 
 
 # --- IO ------------------------------------------------------------------
@@ -362,89 +388,191 @@ _PAGE = """<!DOCTYPE html>
 <title>regula · {title}</title>
 <style>
 :root {{
-  --c-text: #222;
-  --c-muted: #6a6a6a;
-  --c-border: #d0d0d0;
+  --c-text: #1f2328;
+  --c-muted: #6a737d;
+  --c-faint: #afafaf;
+  --c-border: #e0e0e0;
   --c-bg: #ffffff;
-  --c-card: #fafafa;
   --c-heading: #1f3a8a;
-  --c-paragraph-border: #888;
   --c-glossary: #2a8a3e;
-  --c-glossary-bg: #eef7ef;
   --c-target: #fff5cc;
   --c-target-border: #e6b800;
   --c-ref-internal: #1755a8;
   --c-ref-external: #2a8a3e;
   --c-fail: #b91c1c;
   --c-ok: #15803d;
-  --c-term-bg: #fff2a8;
+  --c-term-bg: #fff8c5;
 }}
 * {{ box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  margin: 0; color: var(--c-text); background: var(--c-bg); line-height: 1.55; }}
-header {{ padding: 20px 32px; border-bottom: 1px solid var(--c-border); background: #f7f7f7; }}
-header h1 {{ margin: 0 0 8px 0; font-size: 1.4em; }}
-header .doc-id {{ color: var(--c-muted); font-family: ui-monospace, monospace; }}
-table.doc-meta {{ font-size: 0.85em; margin-top: 12px; border-collapse: collapse; }}
-table.doc-meta th {{ text-align: left; padding: 1px 12px 1px 0; font-weight: normal; color: var(--c-muted); vertical-align: top; }}
-table.doc-meta td {{ padding: 1px 0; font-family: ui-monospace, monospace; }}
+body {{
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  margin: 0; color: var(--c-text); background: var(--c-bg);
+  line-height: 1.65; font-size: 16px;
+}}
 .ok {{ color: var(--c-ok); font-weight: 600; }}
 .fail {{ color: var(--c-fail); font-weight: 600; }}
-.layout {{ display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 32px; padding: 24px 32px; max-width: 1400px; margin: 0 auto; }}
-nav.toc-nav {{ position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow-y: auto; font-size: 0.88em; }}
-nav.toc-nav h3 {{ margin: 0 0 8px 0; font-size: 0.95em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--c-muted); }}
+
+/* --- header --- */
+header.page-head {{
+  padding: 18px 32px 12px; border-bottom: 1px solid var(--c-border);
+  display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+}}
+header.page-head h1 {{ margin: 0; font-size: 1.15em; font-weight: 600; }}
+header.page-head .doc-id {{
+  color: var(--c-muted); font-family: ui-monospace, monospace; font-size: 0.88em;
+}}
+header.page-head .summary {{ color: var(--c-muted); font-size: 0.9em; margin-left: auto; }}
+.doc-meta-details {{ width: 100%; margin-top: 6px; }}
+.doc-meta-details summary {{
+  cursor: pointer; color: var(--c-muted); font-size: 0.82em; user-select: none;
+  display: inline-block; padding: 2px 0;
+}}
+.doc-meta-details summary:hover {{ color: var(--c-text); }}
+table.doc-meta {{ font-size: 0.82em; margin: 8px 0 0; border-collapse: collapse; }}
+table.doc-meta th {{
+  text-align: left; padding: 1px 14px 1px 0; font-weight: normal;
+  color: var(--c-muted); vertical-align: top;
+}}
+table.doc-meta td {{ padding: 1px 0; font-family: ui-monospace, monospace; }}
+
+/* --- view-mode toggle bar --- */
+.view-toggles {{
+  position: sticky; top: 0; z-index: 10;
+  padding: 8px 32px; border-bottom: 1px solid var(--c-border);
+  background: rgba(255,255,255,0.95); backdrop-filter: blur(4px);
+  font-size: 0.85em; color: var(--c-muted); display: flex; gap: 16px;
+}}
+.view-toggles label {{ cursor: pointer; user-select: none; }}
+.view-toggles input {{ vertical-align: -1px; margin-right: 4px; }}
+.view-toggles .legend {{ margin-left: auto; font-size: 0.92em; color: var(--c-faint); }}
+.view-toggles .legend .ref-internal,
+.view-toggles .legend .ref-external,
+.view-toggles .legend .term {{ font-size: 0.95em; }}
+
+/* --- layout --- */
+.layout {{
+  display: grid; grid-template-columns: 240px minmax(0, 760px);
+  gap: 48px; padding: 28px 32px 80px; max-width: 1200px; margin: 0 auto;
+}}
+nav.toc-nav {{
+  position: sticky; top: 56px; align-self: start;
+  max-height: calc(100vh - 72px); overflow-y: auto; font-size: 0.9em;
+}}
+nav.toc-nav h3 {{
+  margin: 0 0 10px 0; font-size: 0.78em; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--c-muted);
+}}
 ul.toc {{ list-style: none; padding-left: 12px; margin: 0; }}
-ul.toc > li {{ margin: 6px 0; }}
+ul.toc ul.toc {{ padding-left: 14px; margin-top: 4px; }}
+ul.toc > li {{ margin: 5px 0; }}
 ul.toc a {{ color: var(--c-text); text-decoration: none; }}
-ul.toc a:hover {{ text-decoration: underline; }}
-ul.toc .oi {{ display: block; color: var(--c-muted); font-family: ui-monospace, monospace; font-size: 0.85em; }}
+ul.toc a:hover {{ color: var(--c-ref-internal); text-decoration: underline; }}
+
+/* --- chunks --- */
 main {{ min-width: 0; }}
-.chunk {{ margin-bottom: 14px; padding: 12px 16px; border-left: 3px solid var(--c-border);
-  background: var(--c-card); border-radius: 0 4px 4px 0; }}
-.chunk:target {{ background: var(--c-target); border-left-color: var(--c-target-border); }}
-.chunk-section_heading {{ border-left-color: var(--c-heading); background: #eef2fb; }}
-.chunk-paragraph {{ border-left-color: var(--c-paragraph-border); }}
-.chunk-glossary_entry {{ border-left-color: var(--c-glossary); background: var(--c-glossary-bg); }}
-.chunk .text {{ margin: 0 0 8px 0; }}
-.chunk h2.text, .chunk h3.text, .chunk h4.text, .chunk h5.text, .chunk h6.text {{ margin: 0 0 8px 0; }}
-.meta {{ font-size: 0.78em; color: var(--c-muted); font-family: ui-monospace, monospace;
-  display: flex; flex-wrap: wrap; gap: 0 0.5em; }}
-.meta::before {{ content: ""; }}
-.meta > * {{ }}
-.meta code {{ background: #ececec; padding: 1px 5px; border-radius: 3px; font-size: 0.95em; }}
-.meta .sec {{ font-style: italic; }}
-.meta .type-tag {{ background: #ddd; padding: 0 6px; border-radius: 10px; color: #333; }}
-.meta a {{ color: var(--c-ref-internal); }}
-details.json {{ margin-top: 8px; font-size: 0.82em; }}
-details.json summary {{ cursor: pointer; color: var(--c-muted); }}
-details.json pre {{ background: #f0f0f0; padding: 10px; border-radius: 3px;
-  overflow-x: auto; font-size: 0.9em; }}
-.ref {{ text-decoration: underline; text-decoration-thickness: 1px; }}
+.chunk {{
+  position: relative; margin: 0; padding: 4px 0 4px 16px;
+  border-left: 2px solid transparent;
+  transition: border-color 0.15s ease;
+}}
+.chunk:hover {{ border-left-color: var(--c-border); }}
+.chunk:target {{
+  border-left-color: var(--c-target-border);
+  background: linear-gradient(to right, var(--c-target), transparent 80%);
+}}
+.chunk-section_heading {{ margin-top: 28px; }}
+.chunk-section_heading:first-child {{ margin-top: 0; }}
+.chunk-section_heading:hover {{ border-left-color: var(--c-heading); }}
+.chunk-glossary_entry:hover {{ border-left-color: var(--c-glossary); }}
+.chunk .text {{ margin: 0; }}
+.chunk h2.text {{ font-size: 1.25em; font-weight: 600; margin: 12px 0 4px; color: #111; }}
+.chunk h3.text {{ font-size: 1.08em; font-weight: 600; margin: 10px 0 2px; color: #222; }}
+.chunk h4.text {{ font-size: 1em; font-weight: 600; margin: 8px 0 2px; }}
+.chunk h5.text, .chunk h6.text {{ font-size: 0.95em; font-weight: 600; margin: 6px 0 2px; }}
+.chunk .glossary {{ }}
+.chunk p.text {{ margin: 6px 0; }}
+
+/* --- meta strip (hidden by default; shown on hover or via toggle) --- */
+.meta {{
+  display: none;
+  font-size: 0.74em; color: var(--c-muted); font-family: ui-monospace, monospace;
+  margin-top: 4px; padding-top: 2px;
+  flex-wrap: wrap; gap: 2px 8px; align-items: baseline;
+}}
+.chunk:hover > .meta {{ display: flex; }}
+.meta .oi {{ color: var(--c-faint); }}
+.meta code {{
+  background: #f0f0f0; padding: 0 5px; border-radius: 3px; font-size: 0.95em;
+  color: #444;
+}}
+.meta .type-tag {{
+  background: #eaeaea; padding: 0 6px; border-radius: 10px; color: #555;
+  font-family: -apple-system, sans-serif; font-size: 0.95em;
+}}
+.meta a {{ color: var(--c-ref-internal); text-decoration: none; }}
+.meta a:hover {{ text-decoration: underline; }}
+.meta .refs {{ }}
+.meta .backlinks {{ }}
+.meta .terms {{ font-style: italic; }}
+
+/* --- JSON block (hidden unless toggle on) --- */
+.chunk .json {{
+  display: none;
+  margin: 6px 0 0; padding: 8px 10px; background: #fafafa;
+  border: 1px solid var(--c-border); border-radius: 3px;
+  font-size: 0.78em; line-height: 1.4; overflow-x: auto; color: #333;
+}}
+
+/* --- global toggles --- */
+body:has(#tog-meta:checked) .meta {{ display: flex; }}
+body:has(#tog-json:checked) .chunk .json {{ display: block; }}
+
+/* --- inline refs and terms --- */
+.ref {{ text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }}
 .ref-internal {{ color: var(--c-ref-internal); }}
 .ref-external {{ color: var(--c-ref-external); }}
 .ref-unresolved {{ color: var(--c-fail); text-decoration-style: wavy; }}
-.term {{ background: var(--c-term-bg); padding: 0 2px; border-radius: 2px; cursor: help;
-  border-bottom: 1px dotted #d4a017; }}
-section.deferred-section {{ margin-top: 48px; padding: 20px 24px; background: #f5f5f5;
-  border-radius: 4px; font-size: 0.92em; }}
-section.deferred-section h3 {{ margin: 0 0 12px 0; color: var(--c-muted); text-transform: uppercase;
-  font-size: 0.9em; letter-spacing: 0.04em; }}
-ul.deferred-list {{ padding-left: 20px; margin: 0; }}
-ul.deferred-list li {{ margin: 8px 0; }}
-ul.deferred-list .phase {{ display: inline-block; margin-left: 8px; padding: 1px 8px;
-  background: #ddd; border-radius: 10px; font-size: 0.85em; color: #555; }}
-ul.deferred-list .observed {{ display: inline-block; margin-left: 8px;
-  background: #fff2a8; padding: 1px 6px; border-radius: 3px; font-family: ui-monospace, monospace;
-  font-size: 0.85em; }}
+.term {{
+  background: var(--c-term-bg); padding: 0 2px; border-radius: 2px; cursor: help;
+  border-bottom: 1px dotted #b89400;
+}}
+
+/* --- deferred capabilities --- */
+.deferred-details {{ margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--c-border); }}
+.deferred-details summary {{
+  cursor: pointer; color: var(--c-muted); font-size: 0.85em; user-select: none;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}}
+.deferred-details summary:hover {{ color: var(--c-text); }}
+ul.deferred-list {{
+  padding-left: 0; list-style: none; margin: 12px 0 0; font-size: 0.88em;
+}}
+ul.deferred-list li {{ margin: 10px 0; padding-left: 0; color: var(--c-muted); }}
+ul.deferred-list strong {{ color: var(--c-text); font-weight: 600; }}
+ul.deferred-list .phase {{
+  display: inline-block; margin-left: 8px; padding: 0 7px; background: #eee;
+  border-radius: 10px; font-size: 0.88em; color: #666;
+}}
+ul.deferred-list .observed {{
+  display: inline-block; margin-left: 6px; padding: 0 6px;
+  background: var(--c-term-bg); border-radius: 3px;
+  font-family: ui-monospace, monospace; font-size: 0.88em; color: #6b4500;
+}}
 .empty {{ color: var(--c-muted); font-style: italic; }}
 </style>
 </head>
 <body>
-<header>
-<h1>regula preview · {title}</h1>
-<div class="doc-id">{doc_id}</div>
+<header class="page-head">
+<h1>{title}</h1>
+<span class="doc-id">{doc_id}</span>
+<span class="summary">{summary}</span>
 {meta}
 </header>
+<div class="view-toggles">
+<label><input type="checkbox" id="tog-meta"> Show metadata</label>
+<label><input type="checkbox" id="tog-json"> Show JSON</label>
+<span class="legend">hover any chunk for its metadata · <span class="ref-internal">internal ref</span> · <span class="ref-external">external ref</span> · <span class="term">defined term</span></span>
+</div>
 <div class="layout">
 <nav class="toc-nav">
 <h3>Contents</h3>
@@ -452,10 +580,7 @@ ul.deferred-list .observed {{ display: inline-block; margin-left: 8px;
 </nav>
 <main>
 {chunks}
-<section class="deferred-section">
-<h3>Deferred capabilities</h3>
 {deferred}
-</section>
 </main>
 </div>
 </body>

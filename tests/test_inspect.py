@@ -100,8 +100,10 @@ def test_preview_highlights_glossary_terms(gloss_output: Path) -> None:
 
 def test_preview_shows_backlinks_in_meta_strip(synth_output: Path) -> None:
     html = render_preview(synth_output)
-    # paragraph 1.2 should have a backlink to 1.1.
-    assert "backlinks:" in html
+    # paragraph 1.2 is cited by 1.1 — backlink anchor should exist on
+    # 1.2's chunk pointing back to 1.1.
+    assert "class='backlinks'" in html
+    assert "href='#SYNTH-paragraph-1.1'" in html
 
 
 def test_preview_chunks_in_order_index_sequence(synth_output: Path) -> None:
