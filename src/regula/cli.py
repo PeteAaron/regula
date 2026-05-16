@@ -116,6 +116,48 @@ def preview(
     raise typer.Exit(code=1)
 
 
+@app.command(name="inspect")
+def inspect_cmd(
+    config: str = typer.Option(..., "--config", help="Path to a per-document YAML config."),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        help="Where to write the HTML. Defaults to output/<doc_id>/preview.html.",
+    ),
+) -> None:
+    """Render a diagnostic HTML preview of an existing run.
+
+    Walks chunks in order_index sequence, lays them out as a recomposed
+    document, and surfaces every extracted property (chunk_id, section
+    path, references with resolution status, defined terms, source spans)
+    inline. Internal references render as clickable anchor links so
+    reading-order and target-resolution can be spot-checked by clicking
+    through. Defined terms are highlighted with a tooltip showing the
+    glossary definition. Every chunk has a ``show JSON`` toggle.
+    """
+    from regula.config import load_config
+    from regula.inspect import write_preview
+
+    cfg = load_config(config)
+    output_dir = Path("output") / cfg.doc_id
+    required = [
+        "chunks.jsonl",
+        "toc.json",
+        "references_index.json",
+        "glossary.json",
+        "document.json",
+        "deferred.json",
+    ]
+    missing = [n for n in required if not (output_dir / n).exists()]
+    if missing:
+        err_console.print(
+            f"error: {output_dir} is missing {missing} — run `regula ingest` first"
+        )
+        raise typer.Exit(code=1)
+    target = write_preview(output_dir, out)
+    typer.echo(f"✓ wrote {target}")
+
+
 @app.command()
 def diff(
     a: str = typer.Argument(..., help="First output directory."),
