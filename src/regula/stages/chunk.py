@@ -25,11 +25,38 @@ from regula.schemas import Chunk, ChunkMeta, ChunkType, SourceSpan, StageReport
 
 NAME = "chunk"
 
-# How close an element's top y must be to the outline's destination y for
-# the outline entry to claim that element as the heading. PDF outlines
-# typically point at the top of the page that contains the heading, not
-# the heading visual itself; in our synthetic fixtures the gap is ~10pt.
-_OUTLINE_MATCH_TOLERANCE_Y = 60.0
+# How much an element's text length is allowed to exceed the outline
+# title's. A real heading is typically the same length as its title (or
+# the title prefixed with a section number). When an outline title
+# appears as a substring inside a much longer paragraph, that paragraph
+# is *not* the heading. ``2x + 20 chars`` is generous enough to catch
+# heading text like ``"Section 0: Approved Document B — Fire safety"``
+# matched against a shorter outline title ``"Section 0"``.
+_HEADING_LENGTH_RATIO = 2.0
+_HEADING_LENGTH_SLACK = 20
+
+# How much larger than body font an element must be to count as a
+# heading on font alone. 0.3pt clears float jitter and PDFs that use a
+# 10.5pt body + 11pt headings.
+_HEADING_FONT_DELTA = 0.3
+
+
+def _body_font_size(elements: list[dict[str, Any]]) -> float:
+    """Char-weighted median of element font sizes. Body text dominates
+    by character count, so this reliably picks the body size on
+    well-typeset documents. Returns a sensible fallback when the
+    parse tree has no font metadata."""
+    weighted: list[float] = []
+    for e in elements:
+        size = round(float(e.get("font_size", 0.0)), 1)
+        if size <= 0:
+            continue
+        weight = max(1, len(e.get("text", "")))
+        weighted.extend([size] * weight)
+    if not weighted:
+        return 10.0
+    weighted.sort()
+    return weighted[len(weighted) // 2]
 
 
 def _slug(s: str) -> str:
@@ -62,14 +89,37 @@ def _build_outline_index(
     outline: list[dict[str, Any]],
     elements: list[dict[str, Any]],
     heading_levels: list[int],
+    paragraph_pattern: re.Pattern[str],
+    body_font_size: float,
 ) -> dict[int, dict[str, Any]]:
-    """Match outline entries against text elements.
+    """Match outline entries against text elements with strict
+    heuristics, designed against real PDFs (not just well-bookmarked
+    synthetic ones).
 
-    For each outline entry, prefer a same-page element whose text contains
-    (or is contained by) the outline title; fall back to the closest
-    same-page element within ``_OUTLINE_MATCH_TOLERANCE_Y`` of the
-    outline's destination y. Returns a map from element index to outline
-    entry.
+    Rules — an element can claim an outline entry only when **all** of
+    the following hold:
+
+    1. **Same page** as the outline destination. Proximity-only matches
+       across pages are rejected outright (the prior tier-1 fallback was
+       the primary source of false positives — continuations on the
+       next page would get claimed as headings).
+    2. **Doesn't look like a paragraph.** If the element text matches
+       the document's numbered-paragraph regex, it's a paragraph, not a
+       heading — regardless of what the outline claims.
+    3. **Length compatible with the title.** A real heading is roughly
+       the same length as its outline title. Reject candidates more
+       than ``2× title_len + 20`` chars long; that catches the
+       substring-inside-a-paragraph case that ate ADB §0.5.
+    4. **Text correspondence.** The element must equal the title, be a
+       prefix of it, or have the title as a prefix. Plain "substring
+       anywhere" is rejected because outline titles tend to be common
+       phrases that appear naturally inside body text.
+    5. **Visual distinction.** For non-equality matches, require the
+       element to be bold *or* visibly larger than body font. (Equality
+       matches are trusted on text alone since they're unambiguous.)
+
+    When several elements satisfy these rules, the closest in y to the
+    outline destination wins.
     """
     claimed: dict[int, dict[str, Any]] = {}
     used_idx: set[int] = set()
@@ -79,18 +129,37 @@ def _build_outline_index(
         page = entry["page"]
         dest_y = float(entry.get("dest_y", 0.0))
         title_norm = entry["title"].strip().lower()
+        title_len = len(title_norm)
+        max_len = max(int(_HEADING_LENGTH_RATIO * title_len) + _HEADING_LENGTH_SLACK, title_len)
         best: tuple[int, float, int] | None = None  # (score_tier, y_dist, idx)
         for idx, e in enumerate(elements):
             if idx in used_idx or e["page"] != page:
                 continue
-            text_norm = e["text"].strip().lower()
-            y_dist = abs(e["bbox"][1] - dest_y)
-            if title_norm in text_norm or text_norm in title_norm:
-                tier = 0  # text match — preferred
-            elif y_dist <= _OUTLINE_MATCH_TOLERANCE_Y:
+            # If the element text starts with a paragraph-style number
+            # (``"1.3 "``), strip it before comparing — many publishers
+            # render headings with a leading section number that the
+            # outline title omits. The body-text-with-incidental-title-
+            # substring failure mode is still caught downstream by the
+            # text-correspondence and font-distinction checks.
+            raw = e["text"].strip()
+            para_match = paragraph_pattern.match(raw)
+            stripped = raw[para_match.end():].strip() if para_match else raw
+            text_norm = stripped.lower()
+            if len(text_norm) > max_len:
+                continue
+            if text_norm == title_norm:
+                tier = 0
+            elif text_norm.startswith(title_norm) or title_norm.startswith(text_norm):
                 tier = 1
             else:
                 continue
+            if tier > 0:
+                visually_heading = bool(e.get("is_bold")) or (
+                    float(e.get("font_size", 0.0)) > body_font_size + _HEADING_FONT_DELTA
+                )
+                if not visually_heading:
+                    continue
+            y_dist = abs(e["bbox"][1] - dest_y)
             candidate = (tier, y_dist, idx)
             if best is None or candidate < best:
                 best = candidate
@@ -136,10 +205,15 @@ def walk_with_stats(
     elements: list[dict[str, Any]] = tree.get("elements", [])
     outline: list[dict[str, Any]] = tree.get("outline", [])
 
-    outline_index = _build_outline_index(
-        outline, elements, cfg.chunking.heading_levels
-    )
     para_re = re.compile(cfg.chunking.paragraph_regex)
+    body_font = _body_font_size(elements)
+    outline_index = _build_outline_index(
+        outline,
+        elements,
+        cfg.chunking.heading_levels,
+        para_re,
+        body_font,
+    )
 
     allocator = _IdAllocator(cfg.doc_id)
     extracted_by = _parser_identifier(tree)

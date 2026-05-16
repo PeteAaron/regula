@@ -34,8 +34,15 @@ class ParserConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     primary: str = Field(
-        default="docling",
-        description="Name of the structural parser (produces the document tree).",
+        default="pymupdf",
+        description=(
+            "Name of the structural parser (produces the document tree). "
+            "``pymupdf`` is the default and always available; ``docling`` is "
+            "supported but requires installing the optional dependency "
+            "(``pip install 'regula[docling]'``) and is currently deferred — "
+            "until it's wired up, the pipeline silently falls back to "
+            "``pymupdf`` with a warning."
+        ),
     )
     link_extractor: str = Field(
         default="pymupdf",
@@ -321,12 +328,25 @@ def source_pdf_sha256(pdf_path: str | Path) -> str:
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+_DOC_ID_MAX_LEN = 40
 
 
-def _slugify(name: str) -> str:
-    """Filename stem → safe doc_id (lowercase, alphanumerics + hyphens)."""
+def _slugify(name: str, max_len: int = _DOC_ID_MAX_LEN) -> str:
+    """Filename stem → safe doc_id (lowercase, alphanumerics + hyphens).
+
+    Capped at ``max_len`` characters because doc_id is the prefix of
+    every chunk_id, and chunk_ids show up everywhere — preview HTML,
+    backlinks, log lines. A 70-character doc_id makes a 130-character
+    chunk_id, which is hard to read. Truncation is done at the last
+    word boundary inside the limit.
+    """
     slug = _SLUG_RE.sub("-", name.lower()).strip("-")
-    return slug or "document"
+    if not slug:
+        return "document"
+    if len(slug) <= max_len:
+        return slug
+    truncated = slug[:max_len].rsplit("-", 1)[0]
+    return truncated or slug[:max_len]
 
 
 def infer_config(pdf_path: str | Path) -> Config:
@@ -354,7 +374,12 @@ def infer_config(pdf_path: str | Path) -> Config:
         parsers=ParserConfig(primary="pymupdf", link_extractor="pymupdf"),
         chunking=ChunkingConfig(
             paragraph_regex=r"^(\d+\.\d+[a-z]?)\s+",
-            heading_levels=[1, 2, 3, 4],
+            # Conservative default: only the top three outline levels.
+            # ADB-style outlines often expose per-paragraph entries at
+            # levels 4+ that aren't real headings; tighter levels
+            # combined with the strict heading heuristics in the
+            # chunk walker keep false-positive headings down.
+            heading_levels=[1, 2, 3],
         ),
         references=ReferencesConfig(
             patterns=[
