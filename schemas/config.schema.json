@@ -1,155 +1,23 @@
 {
   "$defs": {
-    "AttributesConfig": {
-      "additionalProperties": true,
-      "description": "Document-specific detection knobs. ``extra='allow'`` is intentional —\nthis is the one place future flags slot in without a schema change.\n\nAnything added here is purely advisory: stages read it to decide\nwhether to populate corresponding entries under ``Chunk.attributes``.",
-      "properties": {
-        "detect_building_type": {
-          "default": false,
-          "description": "When True, tag chunks with applicable building types (e.g. 'dwellinghouse', 'flat') mentioned in the text.",
-          "title": "Detect Building Type",
-          "type": "boolean"
-        },
-        "detect_requirement_scope": {
-          "default": false,
-          "description": "When True, tag each chunk with the Building Regulation requirement (B1..B5) inferred from its section context.",
-          "title": "Detect Requirement Scope",
-          "type": "boolean"
-        }
-      },
-      "title": "AttributesConfig",
-      "type": "object"
-    },
-    "ChunkingConfig": {
-      "additionalProperties": false,
-      "description": "How to split the document into chunks. Controls Stage 2 (``chunk``).",
-      "properties": {
-        "heading_levels": {
-          "description": "Nesting levels the parser should treat as section_heading chunks — e.g. [1, 2, 3, 4].",
-          "items": {
-            "type": "integer"
-          },
-          "title": "Heading Levels",
-          "type": "array"
-        },
-        "merge_continuations": {
-          "default": true,
-          "description": "When True, paragraphs without their own number that follow a numbered paragraph are merged into it as continuations. Disable only if the document has a stricter numbering scheme.",
-          "title": "Merge Continuations",
-          "type": "boolean"
-        },
-        "paragraph_regex": {
-          "description": "Regex that recognises the start of a numbered body paragraph in this document. Capture group 1 is the paragraph number used to build chunk_ids. Compiled at config-load time — invalid regex fails fast.",
-          "title": "Paragraph Regex",
-          "type": "string"
-        },
-        "preserve_reading_order": {
-          "default": true,
-          "description": "When True, chunks are emitted in the parser's reading order (currently always True; the flag is here to make the contract explicit).",
-          "title": "Preserve Reading Order",
-          "type": "boolean"
-        },
-        "treat_captions_as_chunks": {
-          "default": true,
-          "description": "When True, table/diagram captions are emitted as their own caption-type chunks with bidirectional links to their target. Disable only if you genuinely want captions folded into surrounding paragraphs (lossy).",
-          "title": "Treat Captions As Chunks",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "paragraph_regex",
-        "heading_levels"
-      ],
-      "title": "ChunkingConfig",
-      "type": "object"
-    },
     "ParserConfig": {
       "additionalProperties": false,
-      "description": "Which parser implementations to use for this document. Defaults\ncover digital PDFs; a future OCR parser would slot in by changing the\n``primary`` value.",
+      "description": "Which parser implementations to use for this document.",
       "properties": {
         "link_extractor": {
           "default": "pymupdf",
-          "description": "Name of the parser that extracts PDF outline and hyperlinks.",
+          "description": "Parser used for the PDF outline and hyperlinks.",
           "title": "Link Extractor",
           "type": "string"
         },
         "primary": {
           "default": "pymupdf",
-          "description": "Name of the structural parser (produces the document tree). ``pymupdf`` is the default and always available; ``docling`` is supported but requires installing the optional dependency (``pip install 'regula[docling]'``) and is currently deferred — until it's wired up, the pipeline silently falls back to ``pymupdf`` with a warning.",
+          "description": "Name of the structural parser. ``pymupdf`` is the default and always available; ``docling`` is supported but requires installing the optional dependency.",
           "title": "Primary",
           "type": "string"
         }
       },
       "title": "ParserConfig",
-      "type": "object"
-    },
-    "ReferencePattern": {
-      "additionalProperties": false,
-      "description": "One regex used by Stage 3 to find cross-references in chunk text.\n\nInternal patterns capture a target identifier (e.g. paragraph number)\nin group 1; Stage 3 resolves it to a chunk_id. External patterns\ntypically don't capture — the surface text is normalised into\n``external_id``.",
-      "properties": {
-        "name": {
-          "description": "Identifier for this pattern; appears in Reference.pattern_name. Use snake_case — e.g. 'internal_paragraph', 'bs_standard'.",
-          "title": "Name",
-          "type": "string"
-        },
-        "regex": {
-          "description": "The regex itself. Compiled at config-load time.",
-          "title": "Regex",
-          "type": "string"
-        },
-        "type": {
-          "$ref": "#/$defs/ReferenceType",
-          "description": "The kind of edge this pattern produces."
-        }
-      },
-      "required": [
-        "name",
-        "regex",
-        "type"
-      ],
-      "title": "ReferencePattern",
-      "type": "object"
-    },
-    "ReferenceType": {
-      "description": "Kind of edge between a chunk and its target.\n\nSee ``docs/schemas.md`` §References for guidance on which type to use.",
-      "enum": [
-        "internal",
-        "external_standard",
-        "external_document",
-        "requirement",
-        "caption",
-        "defined_term"
-      ],
-      "title": "ReferenceType",
-      "type": "string"
-    },
-    "ReferencesConfig": {
-      "additionalProperties": false,
-      "description": "How to find cross-references. Controls Stage 3 (``resolve_references``).",
-      "properties": {
-        "glossary_section": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Name of the section containing the glossary — e.g. 'Appendix E'. Tells Stage 5 where to find defined terms. None when the document has no glossary.",
-          "title": "Glossary Section"
-        },
-        "patterns": {
-          "description": "Regex patterns to run over every chunk's text. PDF hyperlinks are handled separately and always take precedence.",
-          "items": {
-            "$ref": "#/$defs/ReferencePattern"
-          },
-          "title": "Patterns",
-          "type": "array"
-        }
-      },
-      "title": "ReferencesConfig",
       "type": "object"
     },
     "SourcingConfig": {
@@ -159,105 +27,51 @@
         "coordinate_origin": {
           "const": "top_left",
           "default": "top_left",
-          "description": "Where the bbox origin is. Frozen at 'top_left' for now.",
           "title": "Coordinate Origin",
           "type": "string"
         },
         "coordinate_unit": {
           "const": "pt",
           "default": "pt",
-          "description": "Bbox unit. Frozen at 'pt' (PDF points = 1/72 inch).",
           "title": "Coordinate Unit",
           "type": "string"
         }
       },
       "title": "SourcingConfig",
       "type": "object"
-    },
-    "ValidationConfig": {
-      "additionalProperties": false,
-      "description": "Thresholds for Stage 6. Each threshold is a 0..1 minimum rate the\ncorresponding metric must clear for the pipeline to pass.",
-      "properties": {
-        "fail_on_schema_error": {
-          "default": true,
-          "description": "When True (default), any artifact failing its JSON Schema fails the run. Disable only for debugging.",
-          "title": "Fail On Schema Error",
-          "type": "boolean"
-        },
-        "min_internal_ref_resolution": {
-          "default": 0.95,
-          "description": "Minimum fraction of internal references that must resolve to a known chunk. Below this, the run fails.",
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Min Internal Ref Resolution",
-          "type": "number"
-        },
-        "min_page_coverage": {
-          "default": 0.98,
-          "description": "Minimum fraction of pages that must have at least one chunk. Catches accidental whole-page misses.",
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Min Page Coverage",
-          "type": "number"
-        },
-        "min_reading_order_monotonicity": {
-          "default": 0.98,
-          "description": "Per page, chunks sorted by order_index should have non-decreasing y-coordinates this fraction of the time. Catches reading-order regressions.",
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Min Reading Order Monotonicity",
-          "type": "number"
-        },
-        "min_text_reconstruction_coverage": {
-          "default": 0.97,
-          "description": "Walking chunks in order and concatenating their text must cover this fraction of the source PDF's text (whitespace-normalised). The round-trip guarantee.",
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Min Text Reconstruction Coverage",
-          "type": "number"
-        }
-      },
-      "title": "ValidationConfig",
-      "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "Top-level per-document config. One YAML file per document — adding a\nnew document means writing a new config, not changing code.",
+  "description": "Top-level per-document config.",
   "properties": {
-    "attributes": {
-      "$ref": "#/$defs/AttributesConfig"
-    },
-    "chunking": {
-      "$ref": "#/$defs/ChunkingConfig"
-    },
     "doc_id": {
-      "description": "Short, stable identifier for the document — e.g. 'ADB1-2022'. Used as the prefix of every chunk_id and as the output directory name. Must be unique per document.",
+      "description": "Short, stable identifier — e.g. 'adb1-2022'. Prefix of every block_id and the output directory name.",
       "title": "Doc Id",
       "type": "string"
     },
     "edition": {
+      "default": "unknown",
       "description": "Edition or year of the document.",
       "title": "Edition",
       "type": "string"
     },
     "jurisdiction": {
-      "description": "Legal jurisdiction — e.g. 'England'.",
+      "default": "unknown",
+      "description": "Legal jurisdiction.",
       "title": "Jurisdiction",
       "type": "string"
     },
     "legal_status": {
-      "description": "Legal status — e.g. 'Approved Document', 'British Standard'.",
+      "default": "unknown",
+      "description": "Legal status.",
       "title": "Legal Status",
       "type": "string"
     },
     "parsers": {
       "$ref": "#/$defs/ParserConfig"
     },
-    "references": {
-      "$ref": "#/$defs/ReferencesConfig"
-    },
     "source_pdf": {
-      "description": "Path to the source PDF, relative to the repository root. The file itself is gitignored under inputs/.",
+      "description": "Path to the source PDF.",
       "title": "Source Pdf",
       "type": "string"
     },
@@ -268,19 +82,12 @@
       "description": "Human-readable title.",
       "title": "Title",
       "type": "string"
-    },
-    "validation": {
-      "$ref": "#/$defs/ValidationConfig"
     }
   },
   "required": [
     "doc_id",
     "title",
-    "edition",
-    "jurisdiction",
-    "legal_status",
-    "source_pdf",
-    "chunking"
+    "source_pdf"
   ],
   "title": "Config",
   "type": "object"

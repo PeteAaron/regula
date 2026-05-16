@@ -1,18 +1,21 @@
-"""Typer CLI entry point. Thin wrapper over the library API in :mod:`regula.pipeline`."""
+"""Typer CLI entry point. Thin wrapper over :mod:`regula.pipeline`.
+
+Post-wind-back the CLI is intentionally narrow: ingest (run the
+pipeline), inspect (render preview), diff (reproducibility check),
+plus the per-stage runner and schema exporter. Chunking-era commands
+(``preview --chunk-id``, ``validate``) have been removed.
+"""
 
 from __future__ import annotations
 
-import json
-import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.pretty import Pretty
 
 app = typer.Typer(
     name="regula",
-    help="Deterministic PDF → structured-chunks ingestion pipeline.",
+    help="Deterministic PDF → text-block extraction pipeline.",
     no_args_is_help=True,
 )
 
@@ -32,20 +35,25 @@ def ingest(
     out_dir: Path | None = typer.Option(
         None,
         "--out-dir",
-        help="Where to write artifacts. Defaults to ./<doc_id>/ for "
-        "inferred runs, output/<doc_id>/ for --config runs.",
+        help=(
+            "Where to write artifacts. Defaults to ./<doc_id>/ for "
+            "inferred runs and output/<doc_id>/ for --config runs."
+        ),
     ),
-    no_fail: bool = typer.Option(False, "--no-fail", help="Exit 0 even if validation fails."),
+    no_fail: bool = typer.Option(
+        False, "--no-fail", help="Exit 0 even if validation fails."
+    ),
     no_preview: bool = typer.Option(
         False, "--no-preview", help="Skip writing preview.html at the end."
     ),
     force: bool = typer.Option(
-        False, "--force", "-f", help="Clobber a non-empty output directory even if it doesn't look like a previous regula run.",
+        False,
+        "--force",
+        "-f",
+        help="Clobber a non-empty output directory even if it doesn't look like a previous regula run.",
     ),
 ) -> None:
-    """Run the full pipeline end-to-end for one document.
-
-    Two invocation styles:
+    """Extract blocks from a PDF.
 
     \b
       regula ingest my-doc.pdf            # zero-config; lenient defaults
@@ -55,9 +63,7 @@ def ingest(
     from regula.pipeline import Pipeline, PipelineError
 
     if (config is None) == (pdf is None):
-        err_console.print(
-            "error: provide exactly one of <pdf> or --config"
-        )
+        err_console.print("error: provide exactly one of <pdf> or --config")
         raise typer.Exit(code=1)
 
     if config is not None:
@@ -78,6 +84,7 @@ def ingest(
     except PipelineError as e:
         err_console.print(f"error: {e}")
         raise typer.Exit(code=1) from e
+
     typer.echo(
         f"✓ {cfg.doc_id}: validation {'passed' if report.passed else 'FAILED'} "
         f"({len(report.metrics)} metrics) → {pipeline.output_dir}"
@@ -121,73 +128,25 @@ def stage(
         raise typer.Exit(code=1)
 
 
-@app.command()
-def validate(
-    config: str = typer.Option(..., "--config", help="Path to a per-document YAML config."),
-    no_fail: bool = typer.Option(False, "--no-fail", help="Exit 0 even if validation fails."),
-) -> None:
-    """Re-run the validate stage against an existing run."""
-    from regula.config import load_config
-    from regula.pipeline import Pipeline, PipelineError
-
-    cfg = load_config(config)
-    pipeline = Pipeline(cfg)
-    try:
-        report = pipeline.revalidate()
-    except PipelineError as e:
-        err_console.print(f"error: {e}")
-        raise typer.Exit(code=1) from e
-    typer.echo(
-        f"✓ revalidated: passed={report.passed} metrics={len(report.metrics)}"
-    )
-    if not report.passed and not no_fail:
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def preview(
-    config: str = typer.Option(..., "--config"),
-    chunk_id: str = typer.Option(..., "--chunk-id"),
-) -> None:
-    """Pretty-print a single chunk from an existing run."""
-    from regula.config import load_config
-
-    cfg = load_config(config)
-    chunks_path = Path("output") / cfg.doc_id / "chunks.jsonl"
-    if not chunks_path.exists():
-        err_console.print(f"error: {chunks_path} not found — run `regula ingest` first")
-        raise typer.Exit(code=1)
-    for line in chunks_path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        data = json.loads(line)
-        if data.get("chunk_id") == chunk_id:
-            console.print(Pretty(data, expand_all=True))
-            return
-    err_console.print(f"chunk not found: {chunk_id}")
-    raise typer.Exit(code=1)
-
-
 @app.command(name="inspect")
 def inspect_cmd(
     run_dir: Path | None = typer.Argument(
         None,
-        help="Output directory of a previous run. Defaults to ./<doc_id>/ "
-        "based on --config, or the current directory.",
+        help=(
+            "Output directory of a previous run. Defaults to ./<doc_id>/ "
+            "based on --config, or the current directory."
+        ),
     ),
     config: str | None = typer.Option(
         None, "--config", help="Path to a per-document YAML config."
     ),
     out: Path | None = typer.Option(
-        None, "--out", help="Where to write the HTML. Defaults to <run-dir>/preview.html.",
+        None,
+        "--out",
+        help="Where to write the HTML. Defaults to <run-dir>/preview.html.",
     ),
 ) -> None:
-    """Render a diagnostic HTML preview of an existing run.
-
-    Default behaviour: looks for the artifacts in the current directory.
-    If ``--config`` is given, looks under ``output/<doc_id>/``. An
-    explicit positional run directory beats both.
-    """
+    """Render the page-oriented HTML preview of an existing run."""
     from regula.config import load_config
     from regula.inspect import write_preview
 
@@ -199,14 +158,7 @@ def inspect_cmd(
     else:
         output_dir = Path.cwd()
 
-    required = [
-        "chunks.jsonl",
-        "toc.json",
-        "references_index.json",
-        "glossary.json",
-        "document.json",
-        "deferred.json",
-    ]
+    required = ["blocks.jsonl", "pages.json", "document.json"]
     missing = [n for n in required if not (output_dir / n).exists()]
     if missing:
         err_console.print(

@@ -113,8 +113,16 @@
   "additionalProperties": false,
   "description": "Top-level run metadata written to ``document.json``.\n\nRead this file first when reviewing a pipeline run — it carries the\ndocument identity, the source-PDF and config hashes (which together\ndetermine reproducibility), pipeline pass/fail, and per-stage reports.",
   "properties": {
+    "block_count": {
+      "default": 0,
+      "description": "Number of text blocks the pipeline emitted.",
+      "minimum": 0,
+      "title": "Block Count",
+      "type": "integer"
+    },
     "chunk_count": {
-      "description": "Number of chunks the pipeline emitted.",
+      "default": 0,
+      "description": "Number of chunks the pipeline emitted. Legacy v0 field — always 0 in the post-wind-back default pipeline (chunking is deferred); preserved so downstream tools that pin against the v0 schema still load.",
       "minimum": 0,
       "title": "Chunk Count",
       "type": "integer"
@@ -238,7 +246,6 @@
     "generated_at",
     "regula_version",
     "page_count",
-    "chunk_count",
     "pipeline_passed"
   ],
   "title": "DocumentMeta",

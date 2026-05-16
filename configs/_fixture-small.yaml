@@ -8,22 +8,3 @@ source_pdf: tests/fixtures/small.pdf
 parsers:
   primary: pymupdf
   link_extractor: pymupdf
-
-chunking:
-  paragraph_regex: '^(\d+\.\d+[a-z]?)\s+'
-  heading_levels: [1, 2]
-  merge_continuations: true
-
-references:
-  patterns:
-    - { name: internal_paragraph, regex: 'paragraph(?:s)?\s+(\d+\.\d+[a-z]?)', type: internal }
-    - { name: bs_standard, regex: 'BS\s?\d+', type: external_standard }
-
-attributes: {}
-
-validation:
-  min_internal_ref_resolution: 0.5
-  min_page_coverage: 0.5
-  min_text_reconstruction_coverage: 0.8
-  min_reading_order_monotonicity: 0.9
-  fail_on_schema_error: true
