@@ -140,3 +140,54 @@ validation:
   min_internal_ref_resolution: 0.5
   min_page_coverage: 0.5
 """
+
+
+@pytest.fixture(scope="session")
+def synthetic_glossary_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A small PDF including a glossary section. Used by extract_glossary tests."""
+    path = tmp_path_factory.mktemp("pdf-gloss") / "synth-gloss.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 60), "Section 1: Body", fontsize=14)
+    page.insert_text((72, 100), "1.1 The compartmentation requirements are described in Appendix A.", fontsize=11)
+    page = doc.new_page()
+    page.insert_text((72, 60), "Appendix A: Defined terms", fontsize=14)
+    page.insert_text((72, 100), "Compartmentation: subdivision of a building into compartments to limit fire spread.", fontsize=11)
+    page.insert_text((72, 140), "Dwellinghouse: a self-contained building used as a dwelling.", fontsize=11)
+    doc.set_toc(
+        [
+            [1, "Section 1: Body", 1],
+            [1, "Appendix A: Defined terms", 2],
+        ]
+    )
+    doc.save(path)
+    doc.close()
+    return path
+
+
+@pytest.fixture(scope="session")
+def synthetic_glossary_config_text(synthetic_glossary_pdf: Path) -> str:
+    return f"""
+doc_id: SYNTH-GLOSS
+title: "Synthetic glossary test"
+edition: "v0"
+jurisdiction: Test
+legal_status: Fixture
+source_pdf: {synthetic_glossary_pdf}
+
+parsers:
+  primary: pymupdf
+
+chunking:
+  paragraph_regex: '^(\\d+\\.\\d+[a-z]?)\\s+'
+  heading_levels: [1]
+
+references:
+  glossary_section: "Appendix A: Defined terms"
+  patterns: []
+
+validation:
+  min_internal_ref_resolution: 0.5
+  min_page_coverage: 0.5
+  min_text_reconstruction_coverage: 0.5
+"""

@@ -43,14 +43,16 @@ def test_schemas_valid_metric_passes_on_skeleton() -> None:
     assert metric["counts"]["failed"] == 0
 
 
-def test_invariant_helpers_callable_on_empty_inputs() -> None:
+def test_invariant_helpers_callable_on_real_output() -> None:
     # Directly call them on the on-disk artifacts, the way Stage 6 does.
     from regula.schemas import (
         TOC,
+        Chunk,
         ReferencesIndex,
         assert_asset_linkage_bidirectional,
         assert_reading_order_valid,
         assert_section_windows_consistent,
+        assert_source_spans_in_bounds,
     )
 
     chunks_path = OUTPUT / "chunks.jsonl"
@@ -59,9 +61,16 @@ def test_invariant_helpers_callable_on_empty_inputs() -> None:
 
     assert chunks_path.exists() and toc_path.exists() and refs_path.exists()
 
-    # Empty chunks ⇒ each invariant holds trivially.
-    assert_reading_order_valid([])
+    chunks = [
+        Chunk.model_validate_json(line)
+        for line in chunks_path.read_text().splitlines()
+        if line.strip()
+    ]
     toc = TOC.model_validate_json(toc_path.read_text())
-    assert_section_windows_consistent(toc, [])
-    assert_asset_linkage_bidirectional([])
+
+    assert_reading_order_valid(chunks)
+    assert_section_windows_consistent(toc, chunks)
+    assert_asset_linkage_bidirectional(chunks)
+    for c in chunks:
+        assert_source_spans_in_bounds(c)
     _ = ReferencesIndex.model_validate_json(refs_path.read_text())

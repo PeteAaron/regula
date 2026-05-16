@@ -136,8 +136,19 @@ def walk(tree: dict[str, Any], cfg: Config) -> list[Chunk]:
     order_index = 0
     last_chunk: Chunk | None = None
 
+    glossary_section_norm = (
+        cfg.references.glossary_section.strip().lower()
+        if cfg.references.glossary_section
+        else None
+    )
+
     def section_paths() -> tuple[list[str], list[str]]:
         return [c.text for c in stack], [c.chunk_id for c in stack]
+
+    def in_glossary_section() -> bool:
+        if glossary_section_norm is None:
+            return False
+        return any(glossary_section_norm in h.text.strip().lower() for h in stack)
 
     for idx, elem in enumerate(elements):
         text = elem["text"]
@@ -223,6 +234,37 @@ def walk(tree: dict[str, Any], cfg: Config) -> list[Chunk]:
             )
             if elem["page"] > last_chunk.page_end:
                 last_chunk.page_end = elem["page"]
+            continue
+
+        # Glossary entry — when we're inside the configured glossary
+        # section and the text doesn't match a heading or paragraph
+        # pattern, treat it as one glossary entry per text block.
+        if in_glossary_section():
+            path, path_ids = section_paths()
+            parent_id = path_ids[-1] if path_ids else None
+            chunk_id = allocator.allocate(
+                ChunkType.GLOSSARY_ENTRY, _slug(text)[:60] or f"g{order_index}"
+            )
+            entry = Chunk(
+                chunk_id=chunk_id,
+                doc_id=cfg.doc_id,
+                type=ChunkType.GLOSSARY_ENTRY,
+                order_index=order_index,
+                page_start=elem["page"],
+                page_end=elem["page"],
+                section_path=path,
+                section_path_ids=path_ids,
+                parent_section_id=parent_id,
+                breadcrumb=" > ".join(path),
+                text=text,
+                meta=ChunkMeta(
+                    source_spans=[_source_span(elem, 0, len(text))],
+                    extracted_by=extracted_by,
+                ),
+            )
+            chunks.append(entry)
+            order_index += 1
+            last_chunk = entry
             continue
 
         # Unclassified — log and skip.
