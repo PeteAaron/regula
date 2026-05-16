@@ -1,0 +1,360 @@
+{
+  "$defs": {
+    "ChunkMeta": {
+      "additionalProperties": true,
+      "description": "Sourcing metadata for a chunk. ``extra='allow'`` is intentional — this\nis one of the three escape hatches for document-specific debug info.",
+      "properties": {
+        "extracted_by": {
+          "title": "Extracted By",
+          "type": "string"
+        },
+        "parser_confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parser Confidence"
+        },
+        "source_spans": {
+          "items": {
+            "$ref": "#/$defs/SourceSpan"
+          },
+          "minItems": 1,
+          "title": "Source Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_spans",
+        "extracted_by"
+      ],
+      "title": "ChunkMeta",
+      "type": "object"
+    },
+    "ChunkType": {
+      "enum": [
+        "section_heading",
+        "paragraph",
+        "table",
+        "diagram",
+        "appendix",
+        "glossary_entry",
+        "regulation_quote",
+        "caption"
+      ],
+      "title": "ChunkType",
+      "type": "string"
+    },
+    "Reference": {
+      "additionalProperties": false,
+      "description": "One outbound cross-reference edge from a chunk.",
+      "properties": {
+        "external_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Id"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "pattern_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern Name"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "hyperlink",
+                "pattern"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "source_span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceSpan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "target_chunk_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Target Chunk Id"
+        },
+        "type": {
+          "$ref": "#/$defs/ReferenceType"
+        }
+      },
+      "required": [
+        "target_chunk_id",
+        "label",
+        "type"
+      ],
+      "title": "Reference",
+      "type": "object"
+    },
+    "ReferenceType": {
+      "enum": [
+        "internal",
+        "external_standard",
+        "external_document",
+        "requirement",
+        "caption",
+        "defined_term"
+      ],
+      "title": "ReferenceType",
+      "type": "string"
+    },
+    "SourceSpan": {
+      "additionalProperties": false,
+      "description": "One contiguous region of one page that produced part of a chunk.",
+      "properties": {
+        "bbox": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bbox",
+          "type": "array"
+        },
+        "page": {
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "text_offset_end": {
+          "minimum": 0,
+          "title": "Text Offset End",
+          "type": "integer"
+        },
+        "text_offset_start": {
+          "minimum": 0,
+          "title": "Text Offset Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page",
+        "bbox",
+        "text_offset_start",
+        "text_offset_end"
+      ],
+      "title": "SourceSpan",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A node in the document. Cross-references, section containment, and\nasset relations are edges. Together: the knowledge-graph substrate.",
+  "properties": {
+    "asset_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Asset Path"
+    },
+    "asset_sidecar_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Asset Sidecar Path"
+    },
+    "attributes": {
+      "additionalProperties": true,
+      "title": "Attributes",
+      "type": "object"
+    },
+    "breadcrumb": {
+      "title": "Breadcrumb",
+      "type": "string"
+    },
+    "caption_target_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Caption Target Id"
+    },
+    "captioned_by_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Captioned By Id"
+    },
+    "chunk_id": {
+      "title": "Chunk Id",
+      "type": "string"
+    },
+    "defined_terms_used": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Defined Terms Used",
+      "type": "array"
+    },
+    "doc_id": {
+      "title": "Doc Id",
+      "type": "string"
+    },
+    "heading_level": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Heading Level"
+    },
+    "meta": {
+      "$ref": "#/$defs/ChunkMeta"
+    },
+    "order_index": {
+      "minimum": 0,
+      "title": "Order Index",
+      "type": "integer"
+    },
+    "page_end": {
+      "minimum": 1,
+      "title": "Page End",
+      "type": "integer"
+    },
+    "page_start": {
+      "minimum": 1,
+      "title": "Page Start",
+      "type": "integer"
+    },
+    "parent_section_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Parent Section Id"
+    },
+    "references_out": {
+      "items": {
+        "$ref": "#/$defs/Reference"
+      },
+      "title": "References Out",
+      "type": "array"
+    },
+    "section_path": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Section Path",
+      "type": "array"
+    },
+    "section_path_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Section Path Ids",
+      "type": "array"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/$defs/ChunkType"
+    }
+  },
+  "required": [
+    "chunk_id",
+    "doc_id",
+    "type",
+    "order_index",
+    "page_start",
+    "page_end",
+    "section_path",
+    "section_path_ids",
+    "parent_section_id",
+    "breadcrumb",
+    "text",
+    "meta"
+  ],
+  "title": "Chunk",
+  "type": "object"
+}

@@ -1,0 +1,170 @@
+{
+  "$defs": {
+    "StageReport": {
+      "additionalProperties": false,
+      "properties": {
+        "counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Counts",
+          "type": "object"
+        },
+        "duration_seconds": {
+          "minimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Errors",
+          "type": "array"
+        },
+        "finished_at": {
+          "format": "date-time",
+          "title": "Finished At",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "stage",
+        "started_at",
+        "finished_at",
+        "duration_seconds",
+        "ok"
+      ],
+      "title": "StageReport",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level run metadata written to ``document.json``.",
+  "properties": {
+    "chunk_count": {
+      "minimum": 0,
+      "title": "Chunk Count",
+      "type": "integer"
+    },
+    "config_sha256": {
+      "title": "Config Sha256",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "const": "pdf_pt_top_left",
+      "default": "pdf_pt_top_left",
+      "title": "Coordinate Convention",
+      "type": "string"
+    },
+    "doc_id": {
+      "title": "Doc Id",
+      "type": "string"
+    },
+    "edition": {
+      "title": "Edition",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "git_sha": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Git Sha"
+    },
+    "jurisdiction": {
+      "title": "Jurisdiction",
+      "type": "string"
+    },
+    "legal_status": {
+      "title": "Legal Status",
+      "type": "string"
+    },
+    "page_count": {
+      "minimum": 0,
+      "title": "Page Count",
+      "type": "integer"
+    },
+    "parser_versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Parser Versions",
+      "type": "object"
+    },
+    "pipeline_passed": {
+      "title": "Pipeline Passed",
+      "type": "boolean"
+    },
+    "regula_version": {
+      "title": "Regula Version",
+      "type": "string"
+    },
+    "source_pdf": {
+      "title": "Source Pdf",
+      "type": "string"
+    },
+    "source_pdf_sha256": {
+      "title": "Source Pdf Sha256",
+      "type": "string"
+    },
+    "stage_reports": {
+      "items": {
+        "$ref": "#/$defs/StageReport"
+      },
+      "title": "Stage Reports",
+      "type": "array"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "doc_id",
+    "title",
+    "edition",
+    "jurisdiction",
+    "legal_status",
+    "source_pdf",
+    "source_pdf_sha256",
+    "config_sha256",
+    "generated_at",
+    "regula_version",
+    "page_count",
+    "chunk_count",
+    "pipeline_passed"
+  ],
+  "title": "DocumentMeta",
+  "type": "object"
+}

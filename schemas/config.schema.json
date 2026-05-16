@@ -1,0 +1,253 @@
+{
+  "$defs": {
+    "AttributesConfig": {
+      "additionalProperties": true,
+      "description": "Document-specific detection knobs. ``extra='allow'`` is intentional —\nthis is the one place future flags slot in without a schema change.",
+      "properties": {
+        "detect_building_type": {
+          "default": false,
+          "title": "Detect Building Type",
+          "type": "boolean"
+        },
+        "detect_requirement_scope": {
+          "default": false,
+          "title": "Detect Requirement Scope",
+          "type": "boolean"
+        }
+      },
+      "title": "AttributesConfig",
+      "type": "object"
+    },
+    "ChunkingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "heading_levels": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Heading Levels",
+          "type": "array"
+        },
+        "merge_continuations": {
+          "default": true,
+          "title": "Merge Continuations",
+          "type": "boolean"
+        },
+        "paragraph_regex": {
+          "title": "Paragraph Regex",
+          "type": "string"
+        },
+        "preserve_reading_order": {
+          "default": true,
+          "title": "Preserve Reading Order",
+          "type": "boolean"
+        },
+        "treat_captions_as_chunks": {
+          "default": true,
+          "title": "Treat Captions As Chunks",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paragraph_regex",
+        "heading_levels"
+      ],
+      "title": "ChunkingConfig",
+      "type": "object"
+    },
+    "ParserConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "link_extractor": {
+          "default": "pymupdf",
+          "title": "Link Extractor",
+          "type": "string"
+        },
+        "primary": {
+          "default": "docling",
+          "title": "Primary",
+          "type": "string"
+        }
+      },
+      "title": "ParserConfig",
+      "type": "object"
+    },
+    "ReferencePattern": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "regex": {
+          "title": "Regex",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ReferenceType"
+        }
+      },
+      "required": [
+        "name",
+        "regex",
+        "type"
+      ],
+      "title": "ReferencePattern",
+      "type": "object"
+    },
+    "ReferenceType": {
+      "enum": [
+        "internal",
+        "external_standard",
+        "external_document",
+        "requirement",
+        "caption",
+        "defined_term"
+      ],
+      "title": "ReferenceType",
+      "type": "string"
+    },
+    "ReferencesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "glossary_section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Glossary Section"
+        },
+        "patterns": {
+          "items": {
+            "$ref": "#/$defs/ReferencePattern"
+          },
+          "title": "Patterns",
+          "type": "array"
+        }
+      },
+      "title": "ReferencesConfig",
+      "type": "object"
+    },
+    "SourcingConfig": {
+      "additionalProperties": false,
+      "description": "Coordinate convention. Frozen but explicit so downstream tools can\ninspect the config rather than guessing.",
+      "properties": {
+        "coordinate_origin": {
+          "const": "top_left",
+          "default": "top_left",
+          "title": "Coordinate Origin",
+          "type": "string"
+        },
+        "coordinate_unit": {
+          "const": "pt",
+          "default": "pt",
+          "title": "Coordinate Unit",
+          "type": "string"
+        }
+      },
+      "title": "SourcingConfig",
+      "type": "object"
+    },
+    "ValidationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "fail_on_schema_error": {
+          "default": true,
+          "title": "Fail On Schema Error",
+          "type": "boolean"
+        },
+        "min_internal_ref_resolution": {
+          "default": 0.95,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Min Internal Ref Resolution",
+          "type": "number"
+        },
+        "min_page_coverage": {
+          "default": 0.98,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Min Page Coverage",
+          "type": "number"
+        },
+        "min_reading_order_monotonicity": {
+          "default": 0.98,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Min Reading Order Monotonicity",
+          "type": "number"
+        },
+        "min_text_reconstruction_coverage": {
+          "default": 0.97,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Min Text Reconstruction Coverage",
+          "type": "number"
+        }
+      },
+      "title": "ValidationConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "attributes": {
+      "$ref": "#/$defs/AttributesConfig"
+    },
+    "chunking": {
+      "$ref": "#/$defs/ChunkingConfig"
+    },
+    "doc_id": {
+      "title": "Doc Id",
+      "type": "string"
+    },
+    "edition": {
+      "title": "Edition",
+      "type": "string"
+    },
+    "jurisdiction": {
+      "title": "Jurisdiction",
+      "type": "string"
+    },
+    "legal_status": {
+      "title": "Legal Status",
+      "type": "string"
+    },
+    "parsers": {
+      "$ref": "#/$defs/ParserConfig"
+    },
+    "references": {
+      "$ref": "#/$defs/ReferencesConfig"
+    },
+    "source_pdf": {
+      "title": "Source Pdf",
+      "type": "string"
+    },
+    "sourcing": {
+      "$ref": "#/$defs/SourcingConfig"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "validation": {
+      "$ref": "#/$defs/ValidationConfig"
+    }
+  },
+  "required": [
+    "doc_id",
+    "title",
+    "edition",
+    "jurisdiction",
+    "legal_status",
+    "source_pdf",
+    "chunking"
+  ],
+  "title": "Config",
+  "type": "object"
+}

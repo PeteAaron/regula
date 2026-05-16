@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "TOCEntry": {
+      "additionalProperties": false,
+      "description": "One entry in the table of contents. Carries the order-index window\nof the section so range queries are O(1) lookups.",
+      "properties": {
+        "children": {
+          "items": {
+            "$ref": "#/$defs/TOCEntry"
+          },
+          "title": "Children",
+          "type": "array"
+        },
+        "first_chunk_id": {
+          "title": "First Chunk Id",
+          "type": "string"
+        },
+        "first_order_index": {
+          "minimum": 0,
+          "title": "First Order Index",
+          "type": "integer"
+        },
+        "heading_chunk_id": {
+          "title": "Heading Chunk Id",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "last_chunk_id": {
+          "title": "Last Chunk Id",
+          "type": "string"
+        },
+        "last_order_index": {
+          "minimum": 0,
+          "title": "Last Order Index",
+          "type": "integer"
+        },
+        "level": {
+          "minimum": 1,
+          "title": "Level",
+          "type": "integer"
+        },
+        "page": {
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "level",
+        "heading_chunk_id",
+        "first_chunk_id",
+        "last_chunk_id",
+        "first_order_index",
+        "last_order_index",
+        "page"
+      ],
+      "title": "TOCEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/TOCEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+    }
+  },
+  "required": [
+    "entries"
+  ],
+  "title": "TOC",
+  "type": "object"
+}

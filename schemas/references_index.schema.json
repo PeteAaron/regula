@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "ReferenceBacklink": {
+      "additionalProperties": false,
+      "description": "One inbound reference, recorded in the inverted index.",
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "pattern_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern Name"
+        },
+        "source_chunk_id": {
+          "title": "Source Chunk Id",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ReferenceType"
+        }
+      },
+      "required": [
+        "source_chunk_id",
+        "label",
+        "type"
+      ],
+      "title": "ReferenceBacklink",
+      "type": "object"
+    },
+    "ReferenceType": {
+      "enum": [
+        "internal",
+        "external_standard",
+        "external_document",
+        "requirement",
+        "caption",
+        "defined_term"
+      ],
+      "title": "ReferenceType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Inverted reference index — written to ``references_index.json``.\n\nBacklinks are *not* denormalised onto chunks; they live here so the\nchunk schema stays small and the source of truth for an edge is the\nchunk emitting it.",
+  "properties": {
+    "by_target": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/ReferenceBacklink"
+        },
+        "type": "array"
+      },
+      "title": "By Target",
+      "type": "object"
+    },
+    "external_citations": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "External Citations",
+      "type": "object"
+    },
+    "unresolved_internal": {
+      "items": {
+        "$ref": "#/$defs/ReferenceBacklink"
+      },
+      "title": "Unresolved Internal",
+      "type": "array"
+    }
+  },
+  "title": "ReferencesIndex",
+  "type": "object"
+}
