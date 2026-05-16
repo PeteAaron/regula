@@ -20,23 +20,38 @@ The deliverable is the **pipeline itself**, not the structured output of any sin
 ## Quick start
 
 ```bash
-# install
-uv sync                                    # or: pip install -e .
+# install from GitHub (one-time)
+uv tool install git+https://github.com/peteaaron/regula.git
+# …or: pipx install git+https://github.com/peteaaron/regula.git
+# …or, in an existing project: uv add git+https://github.com/peteaaron/regula.git
+```
 
-# ingest a document
-regula ingest --config configs/adb-vol1.yaml
+The fastest path — drop a PDF anywhere on disk and run:
 
-# inspect a single chunk
-regula preview --config configs/adb-vol1.yaml --chunk-id ADB1-2022-§2.4
+```bash
+cd ~/Documents
+regula ingest my-document.pdf
+# → ./my-document/chunks.jsonl, document.json, toc.json, preview.html, …
+open my-document/preview.html
+```
 
-# re-run a single stage
-regula stage resolve_references --config configs/adb-vol1.yaml
+The pipeline infers a sensible default config from the filename (lenient
+validation thresholds, common paragraph numbering, basic external-reference
+patterns) and writes the artifacts to `./<doc-slug>/` next to where you ran
+it. Open the `preview.html` to see what was extracted; tighten the rules
+with a YAML config when you need more control.
 
-# validate an existing run
-regula validate --config configs/adb-vol1.yaml
+For full control, write a YAML config and pass `--config`:
 
-# diff two runs (proves determinism)
-regula diff output/ADB1-2022 output-prev/ADB1-2022
+```bash
+# clone repo for the YAML-driven workflow
+git clone https://github.com/peteaaron/regula && cd regula && uv sync
+
+regula ingest --config configs/adb-vol1.yaml             # full pipeline
+regula inspect --config configs/adb-vol1.yaml            # render preview.html
+regula stage resolve_references --config configs/adb-vol1.yaml  # re-run one stage
+regula validate --config configs/adb-vol1.yaml           # re-check thresholds
+regula diff output/ADB1-2022 output-prev/ADB1-2022       # prove determinism
 ```
 
 ## How it works

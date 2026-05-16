@@ -24,7 +24,8 @@ from datetime import UTC, datetime
 import regula
 from regula.config import Config, config_sha256, source_pdf_sha256
 from regula.logging import bind_stage, clear_stage, configure_logging, get_logger
-from regula.schemas import DocumentMeta, StageReport, ValidationReport
+from regula.deferred import assemble_deferred_features
+from regula.schemas import DeferredFeatureList, DocumentMeta, StageReport, ValidationReport
 from regula.stages import (
     build_toc,
     chunk,
@@ -80,9 +81,24 @@ class Pipeline:
 
     # --- public API ------------------------------------------------------
 
-    def run(self) -> ValidationReport:
-        """Run all stages end-to-end. Clobbers the output directory."""
-        if self.output_dir.exists():
+    def run(self, force: bool = False) -> ValidationReport:
+        """Run all stages end-to-end. Clobbers the output directory.
+
+        Safety: if ``output_dir`` exists and doesn't look like a previous
+        regula run (no ``document.json``), refuse to clobber unless
+        ``force=True``. Prevents wiping a user-owned directory just
+        because the inferred ``doc_id`` happened to collide.
+        """
+        if self.output_dir.exists() and any(self.output_dir.iterdir()):
+            looks_like_regula_output = (self.output_dir / "document.json").exists() or (
+                self.output_dir / "intermediate"
+            ).exists()
+            if not looks_like_regula_output and not force:
+                raise PipelineError(
+                    f"{self.output_dir} exists and doesn't look like a previous "
+                    f"regula run — refusing to clobber. Pass force=True or "
+                    f"choose a different output directory."
+                )
             shutil.rmtree(self.output_dir)
         self._prepare()
 
@@ -92,6 +108,11 @@ class Pipeline:
 
         reports: list[StageReport] = []
         for name, fn in STAGES:
+            # Write deferred.json after the last stage that contributes
+            # observed counts (extract_glossary), so the subsequent
+            # validate stage's schema check sees it on disk.
+            if name == "validate":
+                self._write_deferred(reports)
             reports.append(self._invoke(name, fn))
 
         validation = _load_validation(self.output_dir)
@@ -149,6 +170,16 @@ class Pipeline:
         except FileNotFoundError as e:
             raise PipelineError(str(e)) from e
 
+    def _write_deferred(self, stage_reports: list[StageReport]) -> None:
+        """Write ``deferred.json`` from the stage reports collected so far."""
+        features = assemble_deferred_features(stage_reports)
+        payload = DeferredFeatureList(
+            features=features, generated_at=datetime.now(UTC)
+        )
+        (self.output_dir / "deferred.json").write_text(
+            payload.model_dump_json(indent=2)
+        )
+
     def _write_document_meta(
         self, stage_reports: list[StageReport], pipeline_passed: bool
     ) -> None:
@@ -167,6 +198,21 @@ class Pipeline:
                 json.loads(pages_path.read_text(encoding="utf-8")).get("pages", [])
             )
 
+        # deferred.json was already written before validate so the schema
+        # check could see it; reload it here to mirror into Document.
+        deferred = assemble_deferred_features(stage_reports)
+        deferred_path = self.output_dir / "deferred.json"
+        if deferred_path.exists():
+            deferred = DeferredFeatureList.model_validate_json(
+                deferred_path.read_text(encoding="utf-8")
+            ).features
+        else:
+            deferred_path.write_text(
+                DeferredFeatureList(
+                    features=deferred, generated_at=datetime.now(UTC)
+                ).model_dump_json(indent=2)
+            )
+
         document = DocumentMeta(
             doc_id=self.cfg.doc_id,
             title=self.cfg.title,
@@ -179,11 +225,12 @@ class Pipeline:
             git_sha=_git_sha(),
             generated_at=datetime.now(UTC),
             regula_version=regula.__version__,
-            parser_versions={},  # Phase 4 populates with real parser versions.
+            parser_versions=_collect_parser_versions(self.output_dir),
             page_count=page_count,
             chunk_count=chunk_count,
             stage_reports=stage_reports,
             pipeline_passed=pipeline_passed,
+            deferred_features=deferred,
         )
         (self.output_dir / "document.json").write_text(
             document.model_dump_json(indent=2)
@@ -205,3 +252,17 @@ def _safe_pdf_sha256(path: str) -> str:
 def _load_validation(output_dir: Path) -> ValidationReport:
     report_path = output_dir / "intermediate" / "validate" / "validation_report.json"
     return ValidationReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+
+
+def _collect_parser_versions(output_dir: Path) -> dict[str, str]:
+    """Read the parser identifier off the parse tree, where each parser
+    stamps its name + version. Empty when parse hasn't run."""
+    tree_path = output_dir / "intermediate" / "parse" / "tree.json"
+    if not tree_path.exists():
+        return {}
+    tree = json.loads(tree_path.read_text(encoding="utf-8"))
+    name = tree.get("parser")
+    version = tree.get("parser_version")
+    if not name or not version:
+        return {}
+    return {name: version}

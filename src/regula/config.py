@@ -315,3 +315,66 @@ def source_pdf_sha256(pdf_path: str | Path) -> str:
         for block in iter(lambda: f.read(65536), b""):
             h.update(block)
     return h.hexdigest()
+
+
+# --- zero-config inference ------------------------------------------------
+
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(name: str) -> str:
+    """Filename stem → safe doc_id (lowercase, alphanumerics + hyphens)."""
+    slug = _SLUG_RE.sub("-", name.lower()).strip("-")
+    return slug or "document"
+
+
+def infer_config(pdf_path: str | Path) -> Config:
+    """Build a Config from a PDF path alone. Used by ``regula <pdf>`` to
+    let users run the pipeline with no YAML.
+
+    Defaults are intentionally permissive: validation thresholds are low
+    so a first run almost always completes, the paragraph regex matches
+    common ``1.1`` / ``2.4a`` style numbering, and ``pymupdf`` is the
+    primary parser (docling is deferred). When inference is wrong the
+    user can dump the inferred config to YAML, tweak it, and re-run with
+    ``--config``.
+    """
+    p = Path(pdf_path)
+    if not p.exists():
+        raise FileNotFoundError(f"PDF not found: {p}")
+    stem = p.stem
+    return Config(
+        doc_id=_slugify(stem),
+        title=stem.replace("-", " ").replace("_", " ").strip() or "Untitled",
+        edition="unknown",
+        jurisdiction="unknown",
+        legal_status="unknown",
+        source_pdf=str(p),
+        parsers=ParserConfig(primary="pymupdf", link_extractor="pymupdf"),
+        chunking=ChunkingConfig(
+            paragraph_regex=r"^(\d+\.\d+[a-z]?)\s+",
+            heading_levels=[1, 2, 3, 4],
+        ),
+        references=ReferencesConfig(
+            patterns=[
+                ReferencePattern(
+                    name="internal_paragraph",
+                    regex=r"paragraph(?:s)?\s+(\d+\.\d+[a-z]?)",
+                    type="internal",
+                ),
+                ReferencePattern(
+                    name="bs_standard",
+                    regex=r"BS\s?(?:EN\s)?\d+(?:-\d+)?(?::\d{4})?",
+                    type="external_standard",
+                ),
+            ],
+        ),
+        validation=ValidationConfig(
+            min_internal_ref_resolution=0.0,
+            min_page_coverage=0.5,
+            min_text_reconstruction_coverage=0.5,
+            min_reading_order_monotonicity=0.8,
+            fail_on_schema_error=True,
+        ),
+    )

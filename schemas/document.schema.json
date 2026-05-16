@@ -1,5 +1,47 @@
 {
   "$defs": {
+    "DeferredFeature": {
+      "additionalProperties": false,
+      "description": "A capability the pipeline knows about but does not yet implement.\n\nWritten to ``deferred.json`` on every run so that downstream consumers\n(and humans reviewing output) can tell the difference between\n\"0 tables were emitted because there are none\" and\n\"0 tables were emitted because the table extractor isn't built yet\".\n\n``observed_count`` is populated when a stage *saw* but intentionally\n*skipped* something (e.g. images detected by the parser but not yet\nemitted as diagram chunks). A non-zero value is a useful signal that\nimplementing the feature would materially change this document's\noutput. ``None`` means the run produced no signal either way.",
+      "properties": {
+        "description": {
+          "description": "One-sentence summary of what's not (yet) implemented.",
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "description": "Stable identifier — e.g. 'diagram_chunks'.",
+          "title": "Name",
+          "type": "string"
+        },
+        "observed_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "If a stage detected candidate inputs but skipped them, the count goes here. ``None`` if the run had nothing to report.",
+          "title": "Observed Count"
+        },
+        "target_phase": {
+          "description": "Roadmap phase that will land this — e.g. 'Phase 5'.",
+          "title": "Target Phase",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "target_phase"
+      ],
+      "title": "DeferredFeature",
+      "type": "object"
+    },
     "StageReport": {
       "additionalProperties": false,
       "description": "Summary of one stage's execution — written into the run log and into\n``DocumentMeta.stage_reports``. Returned by every stage function.",
@@ -88,6 +130,14 @@
       "description": "Convention for all bboxes in this run's output. Frozen at 'pdf_pt_top_left' (PDF points, top-left origin) for now.",
       "title": "Coordinate Convention",
       "type": "string"
+    },
+    "deferred_features": {
+      "description": "Capabilities not yet implemented. Mirrors ``deferred.json`` so reviewers see at a glance what isn't (yet) covered.",
+      "items": {
+        "$ref": "#/$defs/DeferredFeature"
+      },
+      "title": "Deferred Features",
+      "type": "array"
     },
     "doc_id": {
       "description": "The document's stable identifier.",

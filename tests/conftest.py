@@ -3,11 +3,20 @@
 The factories build minimally-valid instances of contract models so that
 individual tests can override only the fields under test, rather than
 restating every required field.
+
+``synthetic_pdf`` (session-scoped) generates a small, deterministic PDF
+with a heading hierarchy, numbered paragraphs, and cross-references so
+the chunk + build_toc + resolve_references stages have real input to
+chew on without committing a binary fixture beyond the placeholder.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+import pymupdf
+import pytest
 
 from regula.schemas import (
     Chunk,
@@ -70,3 +79,115 @@ def make_toc_entry(**overrides: Any) -> TOCEntry:
 
 def make_toc(*entries: TOCEntry) -> TOC:
     return TOC(entries=list(entries))
+
+
+@pytest.fixture(scope="session")
+def synthetic_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A small deterministic PDF used by stage-level tests.
+
+    Structure:
+      Page 1: heading 'Section 1: Introduction' (outline level 1)
+              1.1 paragraph that references paragraph 1.2 and BS EN 13501-1
+              1.2 paragraph
+      Page 2: heading 'Section heading for testing' (outline level 2)
+              1.3a paragraph
+    """
+    path = tmp_path_factory.mktemp("pdf") / "synth.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 60), "Section 1: Introduction", fontsize=18)
+    page.insert_text((72, 110), "1.1 This document describes the safety provisions for buildings.", fontsize=11)
+    page.insert_text((72, 140), "See paragraph 1.2 and BS EN 13501-1 for further detail.", fontsize=11)
+    page.insert_text((72, 180), "1.2 Application of these provisions depends on building type.", fontsize=11)
+    page = doc.new_page()
+    page.insert_text((72, 60), "1.3 Section heading for testing", fontsize=14)
+    page.insert_text((72, 110), "1.3a This paragraph contains specific guidance.", fontsize=11)
+    doc.set_toc(
+        [
+            [1, "Section 1: Introduction", 1],
+            [2, "Section heading for testing", 2],
+        ]
+    )
+    doc.save(path)
+    doc.close()
+    return path
+
+
+@pytest.fixture(scope="session")
+def synthetic_config_text(synthetic_pdf: Path) -> str:
+    """A YAML config string pointing at the synthetic PDF."""
+    return f"""
+doc_id: SYNTH
+title: "Synthetic test"
+edition: "v0"
+jurisdiction: Test
+legal_status: Fixture
+source_pdf: {synthetic_pdf}
+
+parsers:
+  primary: pymupdf
+
+chunking:
+  paragraph_regex: '^(\\d+\\.\\d+[a-z]?)\\s+'
+  heading_levels: [1, 2]
+
+references:
+  patterns:
+    - {{ name: internal_paragraph, regex: 'paragraph(?:s)?\\s+(\\d+\\.\\d+[a-z]?)', type: internal }}
+    - {{ name: bs_standard, regex: 'BS\\s?(?:EN\\s)?\\d+(?:-\\d+)?', type: external_standard }}
+
+validation:
+  min_internal_ref_resolution: 0.5
+  min_page_coverage: 0.5
+"""
+
+
+@pytest.fixture(scope="session")
+def synthetic_glossary_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A small PDF including a glossary section. Used by extract_glossary tests."""
+    path = tmp_path_factory.mktemp("pdf-gloss") / "synth-gloss.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 60), "Section 1: Body", fontsize=14)
+    page.insert_text((72, 100), "1.1 The compartmentation requirements are described in Appendix A.", fontsize=11)
+    page = doc.new_page()
+    page.insert_text((72, 60), "Appendix A: Defined terms", fontsize=14)
+    page.insert_text((72, 100), "Compartmentation: subdivision of a building into compartments to limit fire spread.", fontsize=11)
+    page.insert_text((72, 140), "Dwellinghouse: a self-contained building used as a dwelling.", fontsize=11)
+    doc.set_toc(
+        [
+            [1, "Section 1: Body", 1],
+            [1, "Appendix A: Defined terms", 2],
+        ]
+    )
+    doc.save(path)
+    doc.close()
+    return path
+
+
+@pytest.fixture(scope="session")
+def synthetic_glossary_config_text(synthetic_glossary_pdf: Path) -> str:
+    return f"""
+doc_id: SYNTH-GLOSS
+title: "Synthetic glossary test"
+edition: "v0"
+jurisdiction: Test
+legal_status: Fixture
+source_pdf: {synthetic_glossary_pdf}
+
+parsers:
+  primary: pymupdf
+
+chunking:
+  paragraph_regex: '^(\\d+\\.\\d+[a-z]?)\\s+'
+  heading_levels: [1]
+
+references:
+  glossary_section: "Appendix A: Defined terms"
+  patterns: []
+
+validation:
+  min_internal_ref_resolution: 0.5
+  min_page_coverage: 0.5
+  min_text_reconstruction_coverage: 0.5
+"""

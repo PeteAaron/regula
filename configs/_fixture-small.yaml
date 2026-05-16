@@ -6,7 +6,7 @@ legal_status: Fixture
 source_pdf: tests/fixtures/small.pdf
 
 parsers:
-  primary: docling
+  primary: pymupdf
   link_extractor: pymupdf
 
 chunking:

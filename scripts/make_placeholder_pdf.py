@@ -23,7 +23,12 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     doc = pymupdf.open()
     page = doc.new_page()
-    page.insert_text((72, 72), "regula placeholder fixture v0", fontsize=14)
+    # Two lines so the fixture exercises both a heading and a numbered
+    # paragraph (matching the default paragraph_regex). Phase 5 replaces
+    # this with a proper multi-page synthetic regulatory document.
+    page.insert_text((72, 60), "Section 1: Placeholder fixture", fontsize=14)
+    page.insert_text((72, 110), "1.1 This is placeholder paragraph content for v0.", fontsize=11)
+    doc.set_toc([[1, "Section 1: Placeholder fixture", 1]])
     doc.save(out)
     print(f"wrote {out} ({out.stat().st_size} bytes)")
 
