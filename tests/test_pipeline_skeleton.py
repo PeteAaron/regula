@@ -92,8 +92,10 @@ def test_document_records_full_pipeline() -> None:
         "parse", "chunk", "resolve_references", "build_toc",
         "extract_glossary", "validate", "finalise",
     ]
+    # Placeholder PDF has 1 page with one line of text that doesn't match
+    # paragraph_regex, so we get 1 page and 0 chunks.
+    assert doc["page_count"] == 1
     assert doc["chunk_count"] == 0
-    assert doc["page_count"] == 0
     assert doc["source_pdf_sha256"].startswith("sha256:") or len(doc["source_pdf_sha256"]) == 64
 
 
