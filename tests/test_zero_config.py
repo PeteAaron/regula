@@ -29,6 +29,23 @@ def test_infer_config_errors_when_pdf_missing(tmp_path: Path) -> None:
         infer_config(tmp_path / "nope.pdf")
 
 
+def test_infer_config_caps_doc_id_length(tmp_path: Path) -> None:
+    """A long PDF filename mustn't produce a multi-line chunk_id
+    prefix. The doc_id is capped at 40 chars, truncated at a word
+    boundary."""
+    long_name = (
+        "Approved-Document-B-Volume-1-2022-Fire-Safety-Dwellings-Extras.pdf"
+    )
+    pdf = tmp_path / long_name
+    pdf.write_bytes(b"%PDF-1.4\n")
+    cfg = infer_config(pdf)
+    assert len(cfg.doc_id) <= 40
+    # Truncated at a hyphen, not mid-word.
+    assert not cfg.doc_id.endswith("-")
+    # First few words should survive.
+    assert cfg.doc_id.startswith("approved-document-b")
+
+
 def test_ingest_with_positional_pdf_writes_to_cwd_subdir(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
