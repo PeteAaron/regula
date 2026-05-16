@@ -81,9 +81,24 @@ class Pipeline:
 
     # --- public API ------------------------------------------------------
 
-    def run(self) -> ValidationReport:
-        """Run all stages end-to-end. Clobbers the output directory."""
-        if self.output_dir.exists():
+    def run(self, force: bool = False) -> ValidationReport:
+        """Run all stages end-to-end. Clobbers the output directory.
+
+        Safety: if ``output_dir`` exists and doesn't look like a previous
+        regula run (no ``document.json``), refuse to clobber unless
+        ``force=True``. Prevents wiping a user-owned directory just
+        because the inferred ``doc_id`` happened to collide.
+        """
+        if self.output_dir.exists() and any(self.output_dir.iterdir()):
+            looks_like_regula_output = (self.output_dir / "document.json").exists() or (
+                self.output_dir / "intermediate"
+            ).exists()
+            if not looks_like_regula_output and not force:
+                raise PipelineError(
+                    f"{self.output_dir} exists and doesn't look like a previous "
+                    f"regula run — refusing to clobber. Pass force=True or "
+                    f"choose a different output directory."
+                )
             shutil.rmtree(self.output_dir)
         self._prepare()
 

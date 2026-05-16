@@ -32,7 +32,7 @@ IGNORE_KEYS: frozenset[str] = frozenset(
 
 # Files whose content is always run-specific (log output) and is skipped
 # entirely.
-IGNORE_FILES: frozenset[str] = frozenset({"run.log"})
+IGNORE_FILES: frozenset[str] = frozenset({"run.log", "preview.html"})
 
 
 @dataclass(frozen=True)
