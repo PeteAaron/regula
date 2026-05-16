@@ -47,7 +47,15 @@ regula/
 
 Each stage has the signature `stage(input_dir, output_dir, config) -> StageReport`, reads from disk, writes to disk, and can be re-run independently.
 
-## Output contract
+## The output contract — where to read about it
+
+Three documents describe the contract at different levels of detail:
+
+- **[`docs/schemas.md`](docs/schemas.md)** — non-technical, prose walk-through of every model, every field, and "when do I use X?". **Start here** if you're consuming output for the first time, or extending the schema, or trying to remember what a field means.
+- **`src/regula/schemas.py`** — the contract in code (Pydantic v2 models with field-level `description=` strings).
+- **`schemas/*.schema.json`** — the exported JSON Schemas, the contract downstream consumers pin against. Descriptions on every field flow through from the Pydantic models.
+
+## Output directory
 
 For every successfully ingested document the pipeline produces:
 

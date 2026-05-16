@@ -2,9 +2,10 @@
   "$defs": {
     "ReferenceBacklink": {
       "additionalProperties": false,
-      "description": "One inbound reference, recorded in the inverted index.",
+      "description": "One inbound reference, recorded in the inverted index. Backlinks are\n*derived* from ``Chunk.references_out`` — never edit them by hand.",
       "properties": {
         "label": {
+          "description": "The surface text of the original reference.",
           "title": "Label",
           "type": "string"
         },
@@ -18,14 +19,17 @@
             }
           ],
           "default": null,
+          "description": "Name of the config pattern that fired, if pattern-derived.",
           "title": "Pattern Name"
         },
         "source_chunk_id": {
+          "description": "chunk_id of the chunk that emitted this reference.",
           "title": "Source Chunk Id",
           "type": "string"
         },
         "type": {
-          "$ref": "#/$defs/ReferenceType"
+          "$ref": "#/$defs/ReferenceType",
+          "description": "The kind of edge."
         }
       },
       "required": [
@@ -37,6 +41,7 @@
       "type": "object"
     },
     "ReferenceType": {
+      "description": "Kind of edge between a chunk and its target.\n\nSee ``docs/schemas.md`` §References for guidance on which type to use.",
       "enum": [
         "internal",
         "external_standard",
@@ -50,7 +55,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Inverted reference index — written to ``references_index.json``.\n\nBacklinks are *not* denormalised onto chunks; they live here so the\nchunk schema stays small and the source of truth for an edge is the\nchunk emitting it.",
+  "description": "Inverted reference index written to ``references_index.json``.\n\nPhase 3 (``resolve_references``) emits this after assembling\n``Chunk.references_out`` on every chunk. Backlinks are *not* attached\nto chunks themselves; they live here so the source of truth for each\nedge stays on the emitting chunk.",
   "properties": {
     "by_target": {
       "additionalProperties": {
@@ -59,6 +64,7 @@
         },
         "type": "array"
       },
+      "description": "Map from target chunk_id to the list of inbound references. Answers 'what cites paragraph 2.4?'",
       "title": "By Target",
       "type": "object"
     },
@@ -69,10 +75,12 @@
         },
         "type": "array"
       },
+      "description": "Map from normalised external_id (e.g. 'BS-EN-13501-1:2018') to the chunk_ids that cite it. Answers 'which paragraphs cite this standard?'",
       "title": "External Citations",
       "type": "object"
     },
     "unresolved_internal": {
+      "description": "Internal references whose target couldn't be resolved. Each one is a validation-rate miss; the list is bounded by the sample size in the validation report, not here.",
       "items": {
         "$ref": "#/$defs/ReferenceBacklink"
       },
