@@ -173,3 +173,139 @@ def test_validation_does_not_fail_run_on_empty_metrics(
     # The old chunk_count field still exists for backwards compatibility
     # but is always 0 in the new pipeline.
     assert doc["chunk_count"] == 0
+
+
+# --- interactive preview features ----------------------------------------
+
+
+def test_preview_embeds_pattern_state(
+    synthetic_pdf: Path, tmp_path: Path
+) -> None:
+    """The preview's interactive cleanup needs pattern groups embedded
+    as JSON. Verify the script tag is present and has the expected
+    shape — block_summaries, text_groups, position_groups, etc."""
+    import re
+
+    out = _run(tmp_path, synthetic_pdf)
+    html = (out / "preview.html").read_text()
+    match = re.search(
+        r'<script id="regula-state"[^>]*>(.*?)</script>', html, re.S
+    )
+    assert match is not None, "regula-state script tag missing"
+    state = json.loads(match.group(1))
+    assert "doc_id" in state
+    assert "block_summaries" in state
+    assert "text_groups" in state
+    assert "position_groups" in state
+    assert "block_to_groups" in state
+    # Every block should have an entry in block_summaries and block_to_groups.
+    blocks_count = sum(
+        1
+        for line in (out / "blocks.jsonl").read_text().splitlines()
+        if line.strip()
+    )
+    assert len(state["block_summaries"]) == blocks_count
+    assert len(state["block_to_groups"]) == blocks_count
+
+
+def test_preview_includes_side_panel_and_controls(
+    synthetic_pdf: Path, tmp_path: Path
+) -> None:
+    out = _run(tmp_path, synthetic_pdf)
+    html = (out / "preview.html").read_text()
+    # Side panel scaffold.
+    assert 'id="side-panel"' in html
+    assert 'data-tab="text"' in html
+    assert 'data-tab="position"' in html
+    # Top-bar controls.
+    assert 'id="btn-export"' in html
+    assert 'id="btn-reset"' in html
+    assert 'id="count-suppressed"' in html
+    assert 'id="count-tagged"' in html
+
+
+def test_preview_blocks_carry_data_block_id(
+    synthetic_pdf: Path, tmp_path: Path
+) -> None:
+    """The JS uses data-block-id for event delegation. Every rendered
+    block must carry the attribute."""
+    out = _run(tmp_path, synthetic_pdf)
+    html = (out / "preview.html").read_text()
+    from regula.schemas import Block
+
+    blocks = [
+        Block.model_validate_json(line)
+        for line in (out / "blocks.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    for b in blocks:
+        assert f"data-block-id='{b.block_id}'" in html
+
+
+def test_pattern_groups_detect_repeated_text() -> None:
+    """Direct test of the grouping helper. Repeated text across pages
+    should produce a multi-member group; unique text should not."""
+    from regula.inspect import _compute_groups
+    from regula.schemas import Block, BlockLooksLike, BlockRegion
+
+    def b(page: int, idx: int, text: str, y: float = 800.0) -> Block:
+        return Block(
+            block_id=f"doc:p{page}:b{idx}",
+            doc_id="doc",
+            page=page,
+            reading_order_index=idx,
+            bbox=(72.0, y, 200.0, y + 12),
+            text=text,
+            font_size=9.0,
+            font_name="Helvetica",
+            is_bold=False,
+            is_italic=False,
+            region=BlockRegion.FOOTER,
+            looks_like=BlockLooksLike.SMALL_TEXT,
+        )
+
+    blocks = [
+        b(1, 0, "Online version"),
+        b(2, 0, "Online version"),
+        b(3, 0, "Online version"),
+        b(1, 1, "Some unique heading"),
+        b(2, 1, "Some other content"),
+    ]
+    text_groups, position_groups = _compute_groups(blocks)
+    # "Online version" group has 3 members.
+    online_group = [v for v in text_groups.values() if len(v) == 3]
+    assert len(online_group) == 1
+    assert set(online_group[0]) == {"doc:p1:b0", "doc:p2:b0", "doc:p3:b0"}
+    # Unique text shouldn't appear (group size < 2).
+    assert not any(
+        "Some unique heading" in k or "Some other content" in k
+        for k in text_groups
+    )
+    # Position group should also catch all 5 footer-band blocks because
+    # they share y-bucket + font signature.
+    pos_groups_5 = [v for v in position_groups.values() if len(v) == 5]
+    assert len(pos_groups_5) == 1
+
+
+def test_pattern_groups_skip_single_member() -> None:
+    """Groups of one are noise — they don't represent a pattern."""
+    from regula.inspect import _compute_groups
+    from regula.schemas import Block, BlockLooksLike, BlockRegion
+
+    only = Block(
+        block_id="doc:p1:b0",
+        doc_id="doc",
+        page=1,
+        reading_order_index=0,
+        bbox=(72.0, 100.0, 200.0, 120.0),
+        text="just one",
+        font_size=11.0,
+        font_name="Helvetica",
+        is_bold=False,
+        is_italic=False,
+        region=BlockRegion.BODY,
+        looks_like=BlockLooksLike.BODY,
+    )
+    text_groups, position_groups = _compute_groups([only])
+    assert text_groups == {}
+    assert position_groups == {}
