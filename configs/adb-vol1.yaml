@@ -1,0 +1,43 @@
+doc_id: ADB1-2022
+title: "Approved Document B, Volume 1: Fire Safety — Dwellings"
+edition: "2022 edition incorporating 2022 amendments"
+jurisdiction: England
+legal_status: Approved Document
+source_pdf: inputs/ADB-Vol1-2022.pdf
+
+parsers:
+  primary: docling
+  link_extractor: pymupdf
+
+chunking:
+  paragraph_regex: '^(\d+\.\d+[a-z]?)\s+'
+  heading_levels: [1, 2, 3, 4]
+  merge_continuations: true
+  preserve_reading_order: true
+  treat_captions_as_chunks: true
+
+references:
+  patterns:
+    - { name: internal_paragraph, regex: 'paragraph(?:s)?\s+(\d+\.\d+[a-z]?)', type: internal }
+    - { name: appendix, regex: 'Appendix\s+([A-Z])', type: internal }
+    - { name: diagram, regex: 'Diagram\s+(\d+\.\d+)', type: internal }
+    - { name: table, regex: 'Table\s+(\d+\.\d+)', type: internal }
+    - { name: bs_standard, regex: 'BS\s?(?:EN\s)?\d+(?:-\d+)?(?::\d{4})?', type: external_standard }
+    - { name: approved_doc, regex: 'Approved Document\s+[A-Z]\d?', type: external_document }
+    - { name: requirement, regex: 'Requirement\s+(B[1-5])', type: requirement }
+  glossary_section: "Appendix E"
+
+attributes:
+  detect_requirement_scope: true
+  detect_building_type: true
+
+validation:
+  min_internal_ref_resolution: 0.95
+  min_page_coverage: 0.98
+  min_text_reconstruction_coverage: 0.97
+  min_reading_order_monotonicity: 0.98
+  fail_on_schema_error: true
+
+sourcing:
+  coordinate_origin: top_left
+  coordinate_unit: pt

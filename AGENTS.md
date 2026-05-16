@@ -47,7 +47,15 @@ regula/
 
 Each stage has the signature `stage(input_dir, output_dir, config) -> StageReport`, reads from disk, writes to disk, and can be re-run independently.
 
-## Output contract
+## The output contract — where to read about it
+
+Three documents describe the contract at different levels of detail:
+
+- **[`docs/schemas.md`](docs/schemas.md)** — non-technical, prose walk-through of every model, every field, and "when do I use X?". **Start here** if you're consuming output for the first time, or extending the schema, or trying to remember what a field means.
+- **`src/regula/schemas.py`** — the contract in code (Pydantic v2 models with field-level `description=` strings).
+- **`schemas/*.schema.json`** — the exported JSON Schemas, the contract downstream consumers pin against. Descriptions on every field flow through from the Pydantic models.
+
+## Output directory
 
 For every successfully ingested document the pipeline produces:
 
@@ -84,9 +92,35 @@ Schemas live in `src/regula/schemas.py` (Pydantic) and are exported to `schemas/
 
 Run `pytest` to execute the suite. Stage-isolated tests should not require the real ADB PDF.
 
+## Output contract invariants
+
+The schema in `src/regula/schemas.py` is the contract. A small number of cross-model invariants must hold for every successful run; they are enforced by helper functions in the same module and re-checked by Stage 6 (`validate`) on real output. Treat any new query pattern in downstream code as a candidate for being expressed against these invariants rather than re-derived.
+
+- **Coordinate convention is frozen.** All bboxes are PDF userspace points (1/72 inch), origin **top-left**, y increasing downward. The convention is recorded in three independent places — `DocumentMeta.coordinate_convention`, the YAML `sourcing:` block, and module-level documentation in `schemas.py`. Never re-derive bbox orientation from heuristics.
+- **`order_index` is the only authoritative reading order.** Walking chunks sorted by `order_index` reproduces the document. Never sort by `page_start + bbox.y` at query time — multi-column layouts and figure interleaving break that. Stage `chunk` is where `order_index` is assigned; nothing downstream is allowed to change it.
+- **Section containment uses IDs, not labels.** Use `Chunk.parent_section_id` or `Chunk.section_path_ids` for "is X inside section Y" queries. Use `TOCEntry.first_order_index`..`last_order_index` for range queries ("all chunks in §2.4", "between §2.4 and §2.7"). Never label-match on `section_path` / `breadcrumb` — those are display strings.
+- **Cross-references are emitted on the source chunk.** `Chunk.references_out` is the source of truth for every edge. The inverted backlink index lives in `references_index.json` (a Stage 3 sidecar); backlinks are not denormalised onto chunks.
+- **Source spans must be exact.** Every `SourceSpan` must address a non-empty slice of `chunk.text` (`text_offset_start..text_offset_end`) and a positive-area page region. This is what makes "exactly which region of the PDF produced this character" recoverable.
+- **Asset linkage is bidirectional.** A `caption` chunk's `caption_target_id` must point at a `table`/`diagram` chunk whose `captioned_by_id` points back. Tables and diagrams must carry an `asset_path`.
+
+The invariant helpers — `assert_reading_order_valid`, `assert_section_windows_consistent`, `assert_asset_linkage_bidirectional`, `assert_source_spans_in_bounds` — are public functions on `regula.schemas`. Use them whenever building or consuming chunks. Stage 6 calls the same helpers; defining the rules once means consumer code and validator code can't drift apart.
+
+## JSON Schema export
+
+Pydantic models in `src/regula/schemas.py` are the source of truth. Committed JSON Schemas under `schemas/*.schema.json` are the public contract for downstream consumers. They are kept in sync via:
+
+```
+uv run regula export-schemas --out schemas/
+```
+
+`tests/test_schema_export.py` runs a drift check that fails CI if a model change is not accompanied by a re-export. Treat schema diffs as breaking changes and call them out in the PR description.
+
 ## Common pitfalls
 
 - Adding document-specific logic to a stage instead of the config. (See first convention.)
+- Sorting chunks by page+bbox instead of `order_index`. (See "Output contract invariants".)
+- Label-matching on `section_path` for retrieval. Use `section_path_ids` / `parent_section_id` / TOC windows.
+- Modifying a Pydantic model in `schemas.py` without re-exporting `schemas/*.schema.json`. The drift test will catch this, but the PR review should catch it first.
 - Reading from `intermediate/` directories outside the immediate predecessor stage.
 - Mutating shared state across stages — stages communicate via disk artifacts only.
 - Silently swallowing malformed input. Raise.

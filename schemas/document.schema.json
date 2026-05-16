@@ -1,0 +1,196 @@
+{
+  "$defs": {
+    "StageReport": {
+      "additionalProperties": false,
+      "description": "Summary of one stage's execution — written into the run log and into\n``DocumentMeta.stage_reports``. Returned by every stage function.",
+      "properties": {
+        "counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Stage-specific counters — e.g. {'chunks_emitted': 1247, 'continuations_merged': 18}. Free-form.",
+          "title": "Counts",
+          "type": "object"
+        },
+        "duration_seconds": {
+          "description": "Wall-clock duration.",
+          "minimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "errors": {
+          "description": "Fatal errors. Non-empty implies ok=False.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Errors",
+          "type": "array"
+        },
+        "finished_at": {
+          "description": "UTC finish timestamp.",
+          "format": "date-time",
+          "title": "Finished At",
+          "type": "string"
+        },
+        "ok": {
+          "description": "Whether the stage completed without errors.",
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "stage": {
+          "description": "Stage name, e.g. 'chunk' or 'resolve_references'.",
+          "title": "Stage",
+          "type": "string"
+        },
+        "started_at": {
+          "description": "UTC start timestamp.",
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Non-fatal anomalies the stage flagged for human review.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "stage",
+        "started_at",
+        "finished_at",
+        "duration_seconds",
+        "ok"
+      ],
+      "title": "StageReport",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level run metadata written to ``document.json``.\n\nRead this file first when reviewing a pipeline run — it carries the\ndocument identity, the source-PDF and config hashes (which together\ndetermine reproducibility), pipeline pass/fail, and per-stage reports.",
+  "properties": {
+    "chunk_count": {
+      "description": "Number of chunks the pipeline emitted.",
+      "minimum": 0,
+      "title": "Chunk Count",
+      "type": "integer"
+    },
+    "config_sha256": {
+      "description": "SHA-256 of the canonical-JSON-serialised config used for this run.",
+      "title": "Config Sha256",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "const": "pdf_pt_top_left",
+      "default": "pdf_pt_top_left",
+      "description": "Convention for all bboxes in this run's output. Frozen at 'pdf_pt_top_left' (PDF points, top-left origin) for now.",
+      "title": "Coordinate Convention",
+      "type": "string"
+    },
+    "doc_id": {
+      "description": "The document's stable identifier.",
+      "title": "Doc Id",
+      "type": "string"
+    },
+    "edition": {
+      "description": "Which edition/year of the document this is.",
+      "title": "Edition",
+      "type": "string"
+    },
+    "generated_at": {
+      "description": "UTC timestamp when the run finished.",
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "git_sha": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Git SHA of the regula source at run time, if available.",
+      "title": "Git Sha"
+    },
+    "jurisdiction": {
+      "description": "Legal jurisdiction — e.g. 'England'.",
+      "title": "Jurisdiction",
+      "type": "string"
+    },
+    "legal_status": {
+      "description": "Legal status — e.g. 'Approved Document'.",
+      "title": "Legal Status",
+      "type": "string"
+    },
+    "page_count": {
+      "description": "Number of pages in the source PDF.",
+      "minimum": 0,
+      "title": "Page Count",
+      "type": "integer"
+    },
+    "parser_versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Version of each parser used — e.g. {'docling': '2.0.1', 'pymupdf': '1.24.5'}.",
+      "title": "Parser Versions",
+      "type": "object"
+    },
+    "pipeline_passed": {
+      "description": "Did every stage complete and every validation threshold pass?",
+      "title": "Pipeline Passed",
+      "type": "boolean"
+    },
+    "regula_version": {
+      "description": "regula package version (e.g. '0.0.1').",
+      "title": "Regula Version",
+      "type": "string"
+    },
+    "source_pdf": {
+      "description": "Path to the source PDF (relative to repo root).",
+      "title": "Source Pdf",
+      "type": "string"
+    },
+    "source_pdf_sha256": {
+      "description": "SHA-256 of the source PDF bytes. Combined with config_sha256, determines whether a re-run is needed.",
+      "title": "Source Pdf Sha256",
+      "type": "string"
+    },
+    "stage_reports": {
+      "description": "One StageReport per executed stage, in execution order.",
+      "items": {
+        "$ref": "#/$defs/StageReport"
+      },
+      "title": "Stage Reports",
+      "type": "array"
+    },
+    "title": {
+      "description": "Human-readable title.",
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "doc_id",
+    "title",
+    "edition",
+    "jurisdiction",
+    "legal_status",
+    "source_pdf",
+    "source_pdf_sha256",
+    "config_sha256",
+    "generated_at",
+    "regula_version",
+    "page_count",
+    "chunk_count",
+    "pipeline_passed"
+  ],
+  "title": "DocumentMeta",
+  "type": "object"
+}

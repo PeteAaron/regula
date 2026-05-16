@@ -1,0 +1,97 @@
+{
+  "$defs": {
+    "TOCEntry": {
+      "additionalProperties": false,
+      "description": "One entry in the table of contents.\n\nCarries pre-computed ``first_order_index..last_order_index`` bounds so\n\"every chunk in this section\" and \"every chunk between section A and\nsection B\" are cheap range queries — never tree walks plus label\nmatching.",
+      "properties": {
+        "children": {
+          "description": "Nested TOC entries (subsections).",
+          "items": {
+            "$ref": "#/$defs/TOCEntry"
+          },
+          "title": "Children",
+          "type": "array"
+        },
+        "first_chunk_id": {
+          "description": "chunk_id with the smallest order_index inside this section.",
+          "title": "First Chunk Id",
+          "type": "string"
+        },
+        "first_order_index": {
+          "description": "Smallest order_index inside this section (inclusive).",
+          "minimum": 0,
+          "title": "First Order Index",
+          "type": "integer"
+        },
+        "heading_chunk_id": {
+          "description": "The section_heading or appendix chunk this entry points at.",
+          "title": "Heading Chunk Id",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable identifier for the TOC entry — e.g. 'toc-1.2.3'.",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "description": "The heading's display text.",
+          "title": "Label",
+          "type": "string"
+        },
+        "last_chunk_id": {
+          "description": "chunk_id with the largest order_index inside this section.",
+          "title": "Last Chunk Id",
+          "type": "string"
+        },
+        "last_order_index": {
+          "description": "Largest order_index inside this section (inclusive).",
+          "minimum": 0,
+          "title": "Last Order Index",
+          "type": "integer"
+        },
+        "level": {
+          "description": "Nesting depth, 1 outermost.",
+          "minimum": 1,
+          "title": "Level",
+          "type": "integer"
+        },
+        "page": {
+          "description": "1-indexed page where this section begins.",
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "level",
+        "heading_chunk_id",
+        "first_chunk_id",
+        "last_chunk_id",
+        "first_order_index",
+        "last_order_index",
+        "page"
+      ],
+      "title": "TOCEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Hierarchical table of contents derived from the PDF outline and\ncross-checked against section_heading chunks. Written to ``toc.json``.",
+  "properties": {
+    "entries": {
+      "description": "Top-level TOC entries.",
+      "items": {
+        "$ref": "#/$defs/TOCEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+    }
+  },
+  "required": [
+    "entries"
+  ],
+  "title": "TOC",
+  "type": "object"
+}

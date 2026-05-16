@@ -1,0 +1,93 @@
+{
+  "$defs": {
+    "ValidationMetric": {
+      "additionalProperties": false,
+      "description": "One health check result with its threshold and verdict.",
+      "properties": {
+        "counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Raw counts that produced the value — e.g. {'covered': 198, 'total': 200}.",
+          "title": "Counts",
+          "type": "object"
+        },
+        "name": {
+          "description": "Metric name — e.g. 'page_coverage'.",
+          "title": "Name",
+          "type": "string"
+        },
+        "passed": {
+          "description": "Whether the value cleared the threshold.",
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "sample_failures": {
+          "description": "Up to 20 illustrative failure cases for human inspection.",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 20,
+          "title": "Sample Failures",
+          "type": "array"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The configured threshold, if any. None for informational metrics.",
+          "title": "Threshold"
+        },
+        "value": {
+          "description": "The measured value (typically a 0..1 rate).",
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "value",
+        "passed"
+      ],
+      "title": "ValidationMetric",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Health report from Stage 6, written to ``validation_report.json``.\n\n``passed`` is the conjunction of every metric's ``passed`` field; the\npipeline exits non-zero when ``passed`` is False unless ``--no-fail``\nis set.",
+  "properties": {
+    "generated_at": {
+      "description": "UTC timestamp when validation ran.",
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "metrics": {
+      "description": "Every health metric the run produced.",
+      "items": {
+        "$ref": "#/$defs/ValidationMetric"
+      },
+      "title": "Metrics",
+      "type": "array"
+    },
+    "passed": {
+      "description": "Did every threshold-bearing metric pass?",
+      "title": "Passed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "metrics",
+    "passed",
+    "generated_at"
+  ],
+  "title": "ValidationReport",
+  "type": "object"
+}

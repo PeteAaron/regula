@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 app = typer.Typer(
@@ -50,6 +52,19 @@ def diff(
 ) -> None:
     """Diff two pipeline runs (proves reproducibility)."""
     raise NotImplementedError("Diff not yet implemented (Phase 2).")
+
+
+@app.command(name="export-schemas")
+def export_schemas_cmd(
+    out: Path = typer.Option(Path("schemas"), "--out", help="Output directory."),
+) -> None:
+    """Export Pydantic models to committed JSON Schema files."""
+    from regula._schema_export import export_schemas
+
+    written = export_schemas(out)
+    typer.echo(f"Wrote {len(written)} schemas to {out}/")
+    for path in written:
+        typer.echo(f"  {path.name}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,55 @@
+{
+  "$defs": {
+    "GlossaryEntry": {
+      "additionalProperties": false,
+      "description": "One defined term and its definition, extracted by Stage 5.",
+      "properties": {
+        "chunk_id": {
+          "description": "chunk_id of the glossary_entry chunk that holds this term. Lets the lookup table round-trip back to the source.",
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "definition": {
+          "description": "The term's definition, normalised text.",
+          "title": "Definition",
+          "type": "string"
+        },
+        "normalised_term": {
+          "description": "Lowercase, whitespace-collapsed version of term used for matching against chunk text. This is what appears in Chunk.defined_terms_used.",
+          "title": "Normalised Term",
+          "type": "string"
+        },
+        "term": {
+          "description": "The term as written in the document (display form).",
+          "title": "Term",
+          "type": "string"
+        }
+      },
+      "required": [
+        "term",
+        "normalised_term",
+        "definition",
+        "chunk_id"
+      ],
+      "title": "GlossaryEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "All defined terms in the document. Written to ``glossary.json``.\nEmpty when the document has no glossary section.",
+  "properties": {
+    "entries": {
+      "description": "Defined-term lookup table.",
+      "items": {
+        "$ref": "#/$defs/GlossaryEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+    }
+  },
+  "required": [
+    "entries"
+  ],
+  "title": "Glossary",
+  "type": "object"
+}

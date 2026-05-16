@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "Page": {
+      "additionalProperties": false,
+      "description": "Per-page geometry. Lets consumers map a bbox onto the rendered page\neven when the PDF has rotated or unusually sized pages.",
+      "properties": {
+        "height": {
+          "description": "Page height in PDF points.",
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "number"
+        },
+        "page_number": {
+          "description": "1-indexed page number.",
+          "minimum": 1,
+          "title": "Page Number",
+          "type": "integer"
+        },
+        "rotation": {
+          "default": 0,
+          "description": "Page rotation in degrees: 0, 90, 180, or 270.",
+          "title": "Rotation",
+          "type": "integer"
+        },
+        "width": {
+          "description": "Page width in PDF points.",
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "number"
+        }
+      },
+      "required": [
+        "page_number",
+        "width",
+        "height"
+      ],
+      "title": "Page",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The collection of pages for the source PDF — one entry per page,\nin page-number order. Written to ``intermediate/parse/pages.json``.",
+  "properties": {
+    "pages": {
+      "description": "Pages in order, 1..N.",
+      "items": {
+        "$ref": "#/$defs/Page"
+      },
+      "title": "Pages",
+      "type": "array"
+    }
+  },
+  "required": [
+    "pages"
+  ],
+  "title": "Pages",
+  "type": "object"
+}
