@@ -34,8 +34,15 @@ class ParserConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     primary: str = Field(
-        default="docling",
-        description="Name of the structural parser (produces the document tree).",
+        default="pymupdf",
+        description=(
+            "Name of the structural parser (produces the document tree). "
+            "``pymupdf`` is the default and always available; ``docling`` is "
+            "supported but requires installing the optional dependency "
+            "(``pip install 'regula[docling]'``) and is currently deferred — "
+            "until it's wired up, the pipeline silently falls back to "
+            "``pymupdf`` with a warning."
+        ),
     )
     link_extractor: str = Field(
         default="pymupdf",
