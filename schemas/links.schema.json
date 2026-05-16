@@ -1,0 +1,117 @@
+{
+  "$defs": {
+    "PageLink": {
+      "additionalProperties": false,
+      "description": "One hyperlink from the source PDF, attached to the page it sits\non. Internal links resolve to a destination page + point; external\nlinks carry a URI. Written to ``links.json``.",
+      "properties": {
+        "bbox": {
+          "description": "Clickable region of the link on the source page.",
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bbox",
+          "type": "array"
+        },
+        "dest_page": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Destination page for internal links. None for external.",
+          "title": "Dest Page"
+        },
+        "dest_point": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Destination point on dest_page for internal links.",
+          "title": "Dest Point"
+        },
+        "kind": {
+          "description": "Link kind.",
+          "enum": [
+            "internal",
+            "external"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "page": {
+          "description": "1-indexed page the link sits on.",
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "External target URI. None for internal links.",
+          "title": "Uri"
+        }
+      },
+      "required": [
+        "page",
+        "bbox",
+        "kind"
+      ],
+      "title": "PageLink",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "All hyperlinks extracted from the source PDF, page-ordered.",
+  "properties": {
+    "links": {
+      "description": "All links, in page order.",
+      "items": {
+        "$ref": "#/$defs/PageLink"
+      },
+      "title": "Links",
+      "type": "array"
+    }
+  },
+  "title": "Links",
+  "type": "object"
+}

@@ -13,27 +13,23 @@ from pathlib import Path
 
 from regula.config import Config
 from regula.schemas import (
-    TOC,
-    Chunk,
+    Block,
     DeferredFeatureList,
     DocumentMeta,
-    Glossary,
+    Links,
     Pages,
-    ReferencesIndex,
     StageReport,
     ValidationReport,
 )
 
 SCHEMA_MODELS: dict[str, type] = {
-    "chunk": Chunk,
-    "toc": TOC,
+    "block": Block,
     "document": DocumentMeta,
-    "glossary": Glossary,
     "validation_report": ValidationReport,
     "config": Config,
     "stage_report": StageReport,
     "pages": Pages,
-    "references_index": ReferencesIndex,
+    "links": Links,
     "deferred": DeferredFeatureList,
 }
 

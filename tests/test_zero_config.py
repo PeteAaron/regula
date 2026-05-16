@@ -20,8 +20,6 @@ def test_infer_config_from_pdf(synthetic_pdf: Path) -> None:
     assert " " not in cfg.doc_id
     assert cfg.source_pdf == str(synthetic_pdf)
     assert cfg.parsers.primary == "pymupdf"
-    # Lenient validation so first runs complete.
-    assert cfg.validation.min_internal_ref_resolution == 0.0
 
 
 def test_infer_config_errors_when_pdf_missing(tmp_path: Path) -> None:
@@ -30,7 +28,7 @@ def test_infer_config_errors_when_pdf_missing(tmp_path: Path) -> None:
 
 
 def test_infer_config_caps_doc_id_length(tmp_path: Path) -> None:
-    """A long PDF filename mustn't produce a multi-line chunk_id
+    """A long PDF filename mustn't produce a multi-line block_id
     prefix. The doc_id is capped at 40 chars, truncated at a word
     boundary."""
     long_name = (
@@ -60,8 +58,8 @@ def test_ingest_with_positional_pdf_writes_to_cwd_subdir(
     run_dir = tmp_path / doc_id
     assert run_dir.exists()
     for name in [
-        "chunks.jsonl",
-        "toc.json",
+        "blocks.jsonl",
+        "pages.json",
         "document.json",
         "preview.html",  # auto-written
     ]:
@@ -76,7 +74,7 @@ def test_ingest_positional_pdf_with_explicit_out_dir(
         app, ["ingest", str(synthetic_pdf), "--out-dir", str(out), "--no-fail"]
     )
     assert result.exit_code == 0, result.stdout
-    assert (out / "chunks.jsonl").exists()
+    assert (out / "blocks.jsonl").exists()
     assert (out / "preview.html").exists()
 
 

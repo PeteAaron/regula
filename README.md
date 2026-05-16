@@ -1,21 +1,21 @@
 # regula
 
-> A configurable, deterministic ingestion pipeline that turns regulatory and standards PDFs into structured, cross-linked chunks.
+> A deterministic pipeline that extracts every text block from a regulatory PDF, preserving page, position, and font signals — so a human can see *what's there* before deciding how to chunk it.
 
-**Status:** early / v1 in development. The pipeline below is the target. See [`docs/approach.md`](docs/approach.md) for the full spec.
+**Status:** wound back from the v0 chunk-oriented pipeline (2026-05-16). Block extraction works end-to-end; chunking, references, glossary, and TOC are deferred until block-level review identifies document-specific conventions worth automating.
 
 ## What this is
 
-`regula` takes a regulatory document — an Approved Document, a British Standard, a sector RRO guide — and produces a clean, machine-readable representation of it. The output is structured, hierarchical, and cross-linked: every numbered paragraph is its own chunk, every internal cross-reference is resolved to a chunk ID, every external citation is normalised, and every chunk carries enough breadcrumbs to be displayed, retrieved, or linked back to the source PDF.
+`regula` reads a PDF and writes one record per text block per page, with no classification, no merging, and no filtering. Each block carries its bbox, font signals, an advisory `region` (header/footer/margin/body, from y-position) and `looks_like` hint (large_text/body/emphasis/small_text, from font signals) — but nothing downstream filters or merges based on them. They're hints for the human reviewer.
 
-The deliverable is the **pipeline itself**, not the structured output of any single document. Adding a new document means writing a new YAML config, not changing the code.
+The HTML preview surfaces every block from every page so noise patterns (running headers, footers, online-version watermarks) are visible at a glance. Those become ignore-rules later; the pipeline never guesses on the user's behalf.
 
 ## What this is not
 
-- Not a retrieval system. There are no embeddings, no vector store, no MCP server in this repo.
-- Not a knowledge graph. The output is structured chunks with cross-reference edges; building a graph on top is a downstream concern.
-- Not an LLM. No model calls anywhere in the core pipeline. Optional LLM-assisted extraction may be added later as a separate, opt-in stage.
-- Not an OCR tool. Scanned PDFs are out of scope for v1. Documents must have selectable text.
+- Not a chunker. It does not group blocks into paragraphs, headings, or sections. Those decisions depend on conventions that differ between documents — they live downstream of block inspection.
+- Not a reference resolver. PDF hyperlinks are captured in `links.json` with their source and destination bboxes, but they're not yet mapped onto specific blocks.
+- Not an LLM. No model calls anywhere.
+- Not an OCR tool. Documents must have selectable text.
 
 ## Quick start
 
@@ -23,72 +23,79 @@ The deliverable is the **pipeline itself**, not the structured output of any sin
 # install from GitHub (one-time)
 uv tool install git+https://github.com/peteaaron/regula.git
 # …or: pipx install git+https://github.com/peteaaron/regula.git
-# …or, in an existing project: uv add git+https://github.com/peteaaron/regula.git
 ```
 
-The fastest path — drop a PDF anywhere on disk and run:
+Drop a PDF anywhere and run:
 
 ```bash
 cd ~/Documents
 regula ingest my-document.pdf
-# → ./my-document/chunks.jsonl, document.json, toc.json, preview.html, …
+# → ./my-document/blocks.jsonl, pages.json, links.json, preview.html, …
 open my-document/preview.html
 ```
 
-The pipeline infers a sensible default config from the filename (lenient
-validation thresholds, common paragraph numbering, basic external-reference
-patterns) and writes the artifacts to `./<doc-slug>/` next to where you ran
-it. Open the `preview.html` to see what was extracted; tighten the rules
-with a YAML config when you need more control.
+A `./<doc-slug>/` directory appears next to the PDF, holding:
 
-For full control, write a YAML config and pass `--config`:
+```
+my-document/
+  blocks.jsonl            # one Block per line (text + bbox + font + advisory hints)
+  pages.json              # per-page geometry (width, height, rotation)
+  links.json              # every hyperlink, with source bbox and destination
+  outline.json            # PDF outline as the parser reports it
+  document.json           # run metadata (doc_id, sha256s, regula version, …)
+  validation_report.json  # advisory health metrics; never fails the run
+  deferred.json           # what the pipeline could do but doesn't yet
+  preview.html            # page-by-page diagnostic view (open in any browser)
+  intermediate/           # per-stage debug artifacts (preserved)
+  run.log                 # structured log of the run
+```
+
+For a YAML-driven workflow with a stable `doc_id`:
 
 ```bash
-# clone repo for the YAML-driven workflow
 git clone https://github.com/peteaaron/regula && cd regula && uv sync
-
-regula ingest --config configs/adb-vol1.yaml             # full pipeline
-regula inspect --config configs/adb-vol1.yaml            # render preview.html
-regula stage resolve_references --config configs/adb-vol1.yaml  # re-run one stage
-regula validate --config configs/adb-vol1.yaml           # re-check thresholds
-regula diff output/ADB1-2022 output-prev/ADB1-2022       # prove determinism
+regula ingest --config configs/adb-vol1.yaml
+regula inspect --config configs/adb-vol1.yaml   # re-render preview.html
+regula diff output/ADB1-2022 output-prev/ADB1-2022   # prove determinism
 ```
 
-## How it works
+## Pipeline
 
-The pipeline runs as a sequence of isolated stages. Each stage reads from disk, writes to disk, and can be re-run independently:
+Three stages, all reading from and writing to disk:
 
-1. **`parse`** — extract document structure (Docling) and internal hyperlinks (PyMuPDF).
-2. **`chunk`** — emit chunk records by walking the document tree. Default unit is the numbered paragraph.
-3. **`resolve_references`** — resolve internal cross-references (hyperlink-based + regex-based) and normalise external citations.
-4. **`build_toc`** — derive the table of contents from the PDF outline and link entries to chunks.
-5. **`extract_glossary`** — parse the glossary section (if present) and back-fill defined-term usage on every chunk.
-6. **`validate`** — run health checks against configurable thresholds (page coverage, reference resolution rate, schema conformance).
-7. **`finalise`** — assemble the output artifacts and write run metadata.
+1. **`parse`** — PyMuPDF reads the PDF, producing a flat element list (one per text block as the parser sees it), pages, hyperlinks, raster images, and the PDF outline. Written to `intermediate/parse/`.
+2. **`extract_blocks`** — converts parser elements into typed `Block` records. Computes char-weighted median body font size, then assigns each block an advisory `region` (from y-position) and `looks_like` (from font + bold/italic). No filtering. Written to `intermediate/extract_blocks/blocks.jsonl`.
+3. **`validate`** — informational metrics only (blocks-per-page, region breakdown, link kinds, font distribution). Plus JSON Schema conformance — that one *can* fail the run, because a malformed artifact means the extractor itself is broken.
 
-Document-specific behaviour — paragraph numbering, reference patterns, glossary location, validation thresholds — lives entirely in a per-document YAML config. The core code is document-agnostic.
+`finalise` then copies artifacts to the output root. There's no `chunk`, `resolve_references`, `build_toc`, or `extract_glossary` stage in the default pipeline.
 
-## Configuration
+## Output contract
 
-Every document gets a config file under `configs/`. See [`configs/adb-vol1.yaml`](configs/adb-vol1.yaml) for the reference example. The schema is enforced via Pydantic; invalid configs fail at load time, not mid-run.
+Every artifact validates against a committed JSON Schema under `schemas/`. The key ones:
 
-## Output
+- `block.schema.json` — fields on each `Block` record
+- `pages.schema.json` — page geometry
+- `links.schema.json` — hyperlinks
+- `document.schema.json` — run metadata
+- `validation_report.schema.json` — advisory metrics
 
-For every successfully ingested document, the pipeline produces:
+Downstream consumers should pin against the JSON Schemas, not the Python models.
 
-```
-output/<doc_id>/
-  document.json          # top-level metadata and run info
-  toc.json               # table of contents → chunk references
-  chunks.jsonl           # one chunk per line
-  glossary.json          # defined-term lookup (if applicable)
-  assets/                # extracted figures, tables, images
-  intermediate/          # per-stage debug artifacts (preserved)
-  validation_report.json # health metrics and pass/fail
-  run.log                # structured log of the run
-```
+## Why so minimal?
 
-Schemas for each artifact are exported to `schemas/*.schema.json` and form the output contract for downstream consumers.
+The earlier (v0) pipeline tried to be helpful: it pattern-matched numbered paragraphs, claimed PDF outline entries as section headings, merged page-break continuations, and resolved cross-references — all driven by regexes in the per-document YAML config. On well-behaved synthetic fixtures it worked. On real documents (Approved Document B Vol 1) the conventions didn't hold tightly enough: paragraphs got stolen as headings via outline substring matches, continuations were misclassified on page breaks, and the title page / contents page silently dropped out because nothing matched a "paragraph" or "heading" pattern.
+
+The lesson: don't classify until you've seen what's there. The wound-back pipeline emits everything and lets the human declare conventions, not the other way round.
+
+The deleted machinery still lives in `schemas.py` (the `Chunk`, `TOC`, `Glossary`, `Reference` models) for the day a chunking stage is reintroduced as an opt-in step after the user has identified what counts as a paragraph in this document.
+
+## Design principles
+
+- **Extract, don't classify.** The pipeline's job is to faithfully surface what's on the page. Classification is downstream.
+- **Position + font are evidence, not verdicts.** Advisory hints are computed; nothing filters on them.
+- **Deterministic and reproducible.** Same PDF + same config → byte-identical output (excluding timestamped artifacts the diff tool strips).
+- **Stage-isolated.** Every stage reads and writes disk artifacts. No mid-run state.
+- **Observable.** Intermediate artifacts are preserved. Logs are structured.
 
 ## Repo structure
 
@@ -97,47 +104,28 @@ regula/
   src/regula/
     cli.py
     pipeline.py             # stage orchestration
-    config.py               # config loading & validation
-    schemas.py              # Pydantic models
-    parsers/                # pluggable parser implementations
-    stages/                 # one module per pipeline stage
-    logging.py
+    config.py               # minimal: doc_id, title, source_pdf, parsers
+    schemas.py              # Block + Links + Pages + DocumentMeta + legacy models
+    inspect.py              # page-oriented HTML preview
+    parsers/                # pluggable parser implementations (pymupdf today)
+    stages/                 # parse, extract_blocks, validate, finalise
+    deferred.py             # canonical list of capabilities not yet built
   configs/                  # one YAML per document
   schemas/                  # exported JSON Schemas (output contract)
   tests/
-    fixtures/               # synthetic test documents
-    ...
   docs/
-    approach.md             # the design spec
   inputs/                   # source PDFs (gitignored)
   output/                   # generated (gitignored)
 ```
 
-## Design principles
-
-- **Process, not artifact.** The pipeline is the product. Per-document output proves it works.
-- **Configurable, not branched.** Document-specific knowledge lives in YAML, never in `if doc_id == ...` code.
-- **Deterministic and reproducible.** Same PDF + same config → byte-identical output. Tested explicitly.
-- **Stage-isolated.** Every stage reads and writes disk artifacts. No mid-run monolith.
-- **Observable.** Intermediate artifacts are preserved. Logs are structured. Failures are loud.
-- **Deterministic before clever.** No LLM-assisted extraction until deterministic extraction is genuinely exhausted.
-
 ## Roadmap
 
-In scope for v1:
-- Pipeline + ADB Vol 1 (2022) ingestion as the reference case.
-- A second config (synthetic fixture or real document) to prove the pipeline is generic.
+Block extraction is in. The shape of the next step depends on which patterns the previews reveal — see `deferred.json` for the working list. Likely candidates, in rough order:
 
-Out of scope for v1, but planned:
-- Embeddings and retrieval layer (separate repo).
-- MCP server exposing structured retrieval.
-- Cross-document entity resolution (glossary harmonisation across regulations).
-- Version diffing for document amendments.
-- OCR for scanned documents.
-
-## Working with agents in this repo
-
-See [`AGENTS.md`](AGENTS.md) for the canonical agent brief — repo conventions, where to put document-specific logic, common pitfalls, and how to validate changes. `CLAUDE.md` defers to the same file.
+1. Manual ignore rules in the YAML config (e.g. "drop any block whose text matches `^Online version$`").
+2. An opt-in `chunk` stage that consumes user-defined paragraph and heading rules.
+3. Link resolution from hyperlinks to specific destination blocks.
+4. Table-of-contents construction from the PDF outline + located blocks.
 
 ## License
 

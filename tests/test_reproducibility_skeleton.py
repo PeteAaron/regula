@@ -3,6 +3,7 @@ timestamp fields stripped by :mod:`regula._diff`."""
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -47,28 +48,11 @@ def test_cli_diff_reports_identical(two_runs: tuple[Path, Path]) -> None:
 
 def test_diff_detects_changed_file(two_runs: tuple[Path, Path]) -> None:
     a, b = two_runs
-    # Mutate one chunk-of-data field in b/toc.json — not a stripped key.
-    toc_path = b / "toc.json"
-    toc_path.write_text(toc_path.read_text().replace('"entries": []', '"entries": []  '))
-    # That's whitespace only; still parses to the same dict, so diff should
-    # report identical. Now introduce a real difference:
-    import json
-
-    data = json.loads(toc_path.read_text())
-    data["entries"] = [
-        {
-            "id": "sentinel",
-            "label": "Sentinel",
-            "level": 1,
-            "heading_chunk_id": "X-section_heading-S",
-            "first_chunk_id": "X-section_heading-S",
-            "last_chunk_id": "X-section_heading-S",
-            "first_order_index": 0,
-            "last_order_index": 0,
-            "page": 1,
-            "children": [],
-        }
-    ]
-    toc_path.write_text(json.dumps(data))
+    pages_path = b / "pages.json"
+    data = json.loads(pages_path.read_text())
+    data["pages"].append(
+        {"page_number": 999, "width": 100.0, "height": 100.0, "rotation": 0}
+    )
+    pages_path.write_text(json.dumps(data))
     diffs = compare_outputs(a, b)
-    assert any(d.path == "toc.json" for d in diffs), diffs
+    assert any(d.path == "pages.json" for d in diffs), diffs

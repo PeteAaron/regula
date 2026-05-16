@@ -1,4 +1,4 @@
-"""Config-loader tests, including the DoD config-schema check."""
+"""Config-loader tests for the minimal post-wind-back schema."""
 
 from __future__ import annotations
 
@@ -20,28 +20,6 @@ def test_every_config_loads(path: Path) -> None:
     assert cfg.doc_id
 
 
-def test_load_rejects_bad_regex(tmp_path: Path) -> None:
-    bad = tmp_path / "bad.yaml"
-    bad.write_text(
-        yaml.safe_dump(
-            {
-                "doc_id": "X",
-                "title": "x",
-                "edition": "x",
-                "jurisdiction": "x",
-                "legal_status": "x",
-                "source_pdf": "x.pdf",
-                "chunking": {
-                    "paragraph_regex": "[unbalanced",
-                    "heading_levels": [1],
-                },
-            }
-        )
-    )
-    with pytest.raises(ValidationError):
-        load_config(bad)
-
-
 def test_load_rejects_unknown_top_level_key(tmp_path: Path) -> None:
     bad = tmp_path / "extra.yaml"
     bad.write_text(
@@ -49,11 +27,7 @@ def test_load_rejects_unknown_top_level_key(tmp_path: Path) -> None:
             {
                 "doc_id": "X",
                 "title": "x",
-                "edition": "x",
-                "jurisdiction": "x",
-                "legal_status": "x",
                 "source_pdf": "x.pdf",
-                "chunking": {"paragraph_regex": ".*", "heading_levels": [1]},
                 "made_up_field": True,
             }
         )
@@ -62,55 +36,30 @@ def test_load_rejects_unknown_top_level_key(tmp_path: Path) -> None:
         load_config(bad)
 
 
-def test_load_rejects_bad_reference_regex(tmp_path: Path) -> None:
-    bad = tmp_path / "bad_ref.yaml"
-    bad.write_text(
-        yaml.safe_dump(
-            {
-                "doc_id": "X",
-                "title": "x",
-                "edition": "x",
-                "jurisdiction": "x",
-                "legal_status": "x",
-                "source_pdf": "x.pdf",
-                "chunking": {"paragraph_regex": ".*", "heading_levels": [1]},
-                "references": {
-                    "patterns": [{"name": "bad", "regex": "(unclosed", "type": "internal"}],
-                },
-            }
-        )
+def test_config_sha256_is_deterministic(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "c.yaml"
+    cfg_path.write_text(
+        "doc_id: X\ntitle: t\nsource_pdf: x.pdf\n"
     )
-    with pytest.raises(ValidationError):
-        load_config(bad)
-
-
-def test_config_sha256_is_deterministic() -> None:
-    a = load_config(CONFIGS_DIR / "adb-vol1.yaml")
-    b = load_config(CONFIGS_DIR / "adb-vol1.yaml")
+    a = load_config(cfg_path)
+    b = load_config(cfg_path)
     assert config_sha256(a) == config_sha256(b)
 
 
-def test_sourcing_defaults_applied_when_omitted() -> None:
-    cfg = load_config(CONFIGS_DIR / "_fixture-small.yaml")
+def test_sourcing_defaults_applied_when_omitted(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "c.yaml"
+    cfg_path.write_text("doc_id: X\ntitle: t\nsource_pdf: x.pdf\n")
+    cfg = load_config(cfg_path)
     assert cfg.sourcing.coordinate_origin == "top_left"
     assert cfg.sourcing.coordinate_unit == "pt"
 
 
-def test_validation_thresholds_clamped(tmp_path: Path) -> None:
-    bad = tmp_path / "bad_threshold.yaml"
-    bad.write_text(
-        yaml.safe_dump(
-            {
-                "doc_id": "X",
-                "title": "x",
-                "edition": "x",
-                "jurisdiction": "x",
-                "legal_status": "x",
-                "source_pdf": "x.pdf",
-                "chunking": {"paragraph_regex": ".*", "heading_levels": [1]},
-                "validation": {"min_page_coverage": 1.5},
-            }
-        )
-    )
-    with pytest.raises(ValidationError):
-        load_config(bad)
+def test_optional_fields_have_defaults(tmp_path: Path) -> None:
+    """edition/jurisdiction/legal_status default to 'unknown' to keep the
+    inferred-from-filename flow simple."""
+    cfg_path = tmp_path / "c.yaml"
+    cfg_path.write_text("doc_id: X\ntitle: t\nsource_pdf: x.pdf\n")
+    cfg = load_config(cfg_path)
+    assert cfg.edition == "unknown"
+    assert cfg.jurisdiction == "unknown"
+    assert cfg.legal_status == "unknown"

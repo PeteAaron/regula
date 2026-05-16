@@ -27,12 +27,9 @@ from regula.logging import bind_stage, clear_stage, configure_logging, get_logge
 from regula.deferred import assemble_deferred_features
 from regula.schemas import DeferredFeatureList, DocumentMeta, StageReport, ValidationReport
 from regula.stages import (
-    build_toc,
-    chunk,
-    extract_glossary,
+    extract_blocks,
     finalise,
     parse,
-    resolve_references,
     validate,
 )
 
@@ -47,10 +44,7 @@ class PipelineError(RuntimeError):
 StageFn = Callable[[Path, Config], StageReport]
 STAGES: list[tuple[str, StageFn]] = [
     ("parse", parse.run),
-    ("chunk", chunk.run),
-    ("resolve_references", resolve_references.run),
-    ("build_toc", build_toc.run),
-    ("extract_glossary", extract_glossary.run),
+    ("extract_blocks", extract_blocks.run),
     ("validate", validate.run),
 ]
 STAGE_NAMES: list[str] = [name for name, _ in STAGES]
@@ -108,9 +102,8 @@ class Pipeline:
 
         reports: list[StageReport] = []
         for name, fn in STAGES:
-            # Write deferred.json after the last stage that contributes
-            # observed counts (extract_glossary), so the subsequent
-            # validate stage's schema check sees it on disk.
+            # Write deferred.json before validate so the schema check
+            # sees it on disk.
             if name == "validate":
                 self._write_deferred(reports)
             reports.append(self._invoke(name, fn))
@@ -183,12 +176,12 @@ class Pipeline:
     def _write_document_meta(
         self, stage_reports: list[StageReport], pipeline_passed: bool
     ) -> None:
-        chunks_path = self.output_dir / "chunks.jsonl"
-        chunk_count = 0
-        if chunks_path.exists():
-            chunk_count = sum(
+        blocks_path = self.output_dir / "blocks.jsonl"
+        block_count = 0
+        if blocks_path.exists():
+            block_count = sum(
                 1
-                for line in chunks_path.read_text(encoding="utf-8").splitlines()
+                for line in blocks_path.read_text(encoding="utf-8").splitlines()
                 if line.strip()
             )
         pages_path = self.output_dir / "pages.json"
@@ -227,7 +220,7 @@ class Pipeline:
             regula_version=regula.__version__,
             parser_versions=_collect_parser_versions(self.output_dir),
             page_count=page_count,
-            chunk_count=chunk_count,
+            block_count=block_count,
             stage_reports=stage_reports,
             pipeline_passed=pipeline_passed,
             deferred_features=deferred,

@@ -151,6 +151,154 @@ class Pages(BaseModel):
     pages: list[Page] = Field(description="Pages in order, 1..N.")
 
 
+# --- blocks ---------------------------------------------------------------
+#
+# A Block is the primary output of the wound-back pipeline (see
+# AGENTS.md "wind-back" entry, 2026-05-16): one text element per page,
+# unclassified, with positional and font metadata preserved. The user
+# inspects blocks in the preview and decides which to keep, ignore, or
+# group into higher-level structures downstream.
+#
+# No regex-driven heading detection, no paragraph-number matching, no
+# continuation merging. Just "what the parser saw on the page".
+
+
+class BlockRegion(str, Enum):
+    """Where a block sits on the page — derived from y-position only.
+    Advisory: a "footer"-region block isn't filtered out, it's just
+    flagged so the user can spot running-footer patterns at a glance."""
+
+    HEADER = "header"  # top ~7% of the page
+    FOOTER = "footer"  # bottom ~7% of the page
+    MARGIN = "margin"  # left or right edge band
+    BODY = "body"      # everything else
+
+
+class BlockLooksLike(str, Enum):
+    """Visual-signal-only guess at what a block resembles. Strictly
+    advisory: nothing downstream filters or groups by this value. The
+    user can sort/filter the preview by it to spot patterns."""
+
+    LARGE_TEXT = "large_text"      # font_size noticeably larger than body
+    SMALL_TEXT = "small_text"      # font_size noticeably smaller than body
+    EMPHASIS = "emphasis"          # body-sized but bold or italic
+    BODY = "body"                  # body-sized normal weight
+    UNKNOWN = "unknown"            # no useful signal
+
+
+class Block(BaseModel):
+    """One text block from one page, as the parser saw it.
+
+    Blocks are deliberately unclassified — no "paragraph", no "heading",
+    no merging across page breaks. The pipeline's job is to extract;
+    classification and grouping happen downstream once the user has
+    spotted what to ignore in the preview.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    block_id: str = Field(
+        description=(
+            "Deterministic identifier of the form "
+            "``<doc_id>:p<page>:b<reading_order_index>`` — e.g. "
+            "``adb1-2022:p3:b7``. Stable across runs on the same PDF."
+        )
+    )
+    doc_id: str = Field(description="The document this block belongs to.")
+    page: int = Field(ge=1, description="1-indexed page number.")
+    reading_order_index: int = Field(
+        ge=0,
+        description=(
+            "Position within the page in the parser's reading order. "
+            "0-indexed; unique per page."
+        ),
+    )
+    bbox: tuple[float, float, float, float] = Field(
+        description=(
+            "Bounding box (x0, y0, x1, y1) in PDF points, top-left origin."
+        )
+    )
+    text: str = Field(description="The block's textual content as the parser returned it.")
+    font_size: float = Field(ge=0, description="Font size of the first span in the block, in PDF points.")
+    font_name: str = Field(description="Font name of the first span — e.g. 'Helvetica-Bold'.")
+    is_bold: bool = Field(description="Whether the first span has the bold flag.")
+    is_italic: bool = Field(description="Whether the first span has the italic flag.")
+    region: BlockRegion = Field(
+        description=(
+            "Advisory: where on the page this block sits. Computed from "
+            "y-position relative to page height. Never used to filter "
+            "anything — it's there so the user can spot header/footer "
+            "patterns in the preview."
+        )
+    )
+    looks_like: BlockLooksLike = Field(
+        description=(
+            "Advisory: a visual-signal-only guess at what kind of text "
+            "this is. Based on font size relative to the document's "
+            "char-weighted median body size, plus bold/italic flags. "
+            "Strictly advisory."
+        )
+    )
+
+    @model_validator(mode="after")
+    def _check(self) -> Block:
+        x0, y0, x1, y1 = self.bbox
+        if x1 <= x0 or y1 <= y0:
+            raise ValueError(f"bbox must have positive width and height, got {self.bbox}")
+        expected_prefix = f"{self.doc_id}:p{self.page}:b{self.reading_order_index}"
+        if self.block_id != expected_prefix:
+            raise ValueError(
+                f"block_id {self.block_id!r} must equal "
+                f"<doc_id>:p<page>:b<reading_order_index> = {expected_prefix!r}"
+            )
+        return self
+
+
+class PageLink(BaseModel):
+    """One hyperlink from the source PDF, attached to the page it sits
+    on. Internal links resolve to a destination page + point; external
+    links carry a URI. Written to ``links.json``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    page: int = Field(ge=1, description="1-indexed page the link sits on.")
+    bbox: tuple[float, float, float, float] = Field(
+        description="Clickable region of the link on the source page."
+    )
+    kind: Literal["internal", "external"] = Field(description="Link kind.")
+    uri: str | None = Field(
+        default=None,
+        description="External target URI. None for internal links.",
+    )
+    dest_page: int | None = Field(
+        default=None,
+        ge=1,
+        description="Destination page for internal links. None for external.",
+    )
+    dest_point: tuple[float, float] | None = Field(
+        default=None,
+        description="Destination point on dest_page for internal links.",
+    )
+
+
+class Links(BaseModel):
+    """All hyperlinks extracted from the source PDF, page-ordered."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    links: list[PageLink] = Field(default_factory=list, description="All links, in page order.")
+
+
+# --- chunks (legacy v0 contract; not used by the default pipeline) -------
+#
+# The Chunk / TOC / Glossary / Reference models below were the v0 output
+# contract. They're preserved in code so a future opt-in chunking stage
+# can be reintroduced once block-level inspection has identified what
+# counts as a paragraph in a given document. The default pipeline does
+# not write these artifacts.
+
+
+
 class ChunkMeta(BaseModel):
     """Sourcing metadata attached to every chunk.
 
@@ -738,7 +886,21 @@ class DocumentMeta(BaseModel):
         description="Version of each parser used — e.g. {'docling': '2.0.1', 'pymupdf': '1.24.5'}.",
     )
     page_count: int = Field(ge=0, description="Number of pages in the source PDF.")
-    chunk_count: int = Field(ge=0, description="Number of chunks the pipeline emitted.")
+    block_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of text blocks the pipeline emitted.",
+    )
+    chunk_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of chunks the pipeline emitted. Legacy v0 field — "
+            "always 0 in the post-wind-back default pipeline (chunking "
+            "is deferred); preserved so downstream tools that pin against "
+            "the v0 schema still load."
+        ),
+    )
     stage_reports: list[StageReport] = Field(
         default_factory=list,
         description="One StageReport per executed stage, in execution order.",

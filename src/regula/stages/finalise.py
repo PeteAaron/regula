@@ -1,30 +1,33 @@
-"""Stage 7 — `finalise`. Copy chosen intermediate artifacts to the output root.
+"""Stage — `finalise`. Copy chosen intermediate artifacts to the output root.
 
 The orchestrator handles ``document.json`` separately (after finalise has
 finished) so its own ``StageReport`` can be included in
 ``DocumentMeta.stage_reports``.
+
+Post-wind-back the artifact set is intentionally minimal: blocks + pages +
+links + validation_report. Higher-level outputs (chunks, references, TOC,
+glossary) are deferred until the user has identified document conventions
+manually.
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 from regula.config import Config
 from regula.logging import bind_stage, get_logger
-from regula.schemas import StageReport
+from regula.schemas import Links, PageLink, StageReport
 
 NAME = "finalise"
 
-# (relative source under output_dir, relative destination under output_dir).
 _COPIES: list[tuple[str, str]] = [
-    ("intermediate/extract_glossary/chunks.jsonl", "chunks.jsonl"),
-    ("intermediate/build_toc/toc.json", "toc.json"),
-    ("intermediate/extract_glossary/glossary.json", "glossary.json"),
-    ("intermediate/resolve_references/references_index.json", "references_index.json"),
-    ("intermediate/validate/validation_report.json", "validation_report.json"),
+    ("intermediate/extract_blocks/blocks.jsonl", "blocks.jsonl"),
     ("intermediate/parse/pages.json", "pages.json"),
+    ("intermediate/parse/outline.json", "outline.json"),
+    ("intermediate/validate/validation_report.json", "validation_report.json"),
 ]
 
 
@@ -41,6 +44,14 @@ def run(output_dir: Path, cfg: Config) -> StageReport:
         if not src.exists():
             continue
         shutil.copy2(src, output_dir / dst_rel)
+        copied += 1
+
+    # Convert the raw parser link records into the typed Links schema.
+    raw_links_path = output_dir / "intermediate" / "parse" / "links.json"
+    if raw_links_path.exists():
+        raw = json.loads(raw_links_path.read_text(encoding="utf-8"))
+        links_model = Links(links=[PageLink(**r) for r in raw])
+        (output_dir / "links.json").write_text(links_model.model_dump_json(indent=2))
         copied += 1
 
     finished = datetime.now(UTC)

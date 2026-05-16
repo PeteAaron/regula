@@ -4,9 +4,11 @@ Canonical brief for any agent (Claude Code, Cursor, Aider, Continue, …) workin
 
 ## What this repo is
 
-`regula` is a **deterministic, configurable PDF → structured-chunks ingestion pipeline** for regulatory and standards documents (Approved Documents, British Standards, sector RRO guides). The deliverable is the pipeline itself; per-document output is the proof that the pipeline works.
+`regula` is a **deterministic PDF → text-block extraction pipeline** for regulatory and standards documents. The pipeline produces one record per text block per page with positional and font metadata. **It does not classify, merge, or group blocks** — those decisions depend on document-specific conventions that the human reviewer identifies after inspecting the output.
 
-The full design spec lives in [`docs/approach.md`](docs/approach.md). Read it before making non-trivial changes. This file covers what an agent needs day-to-day; the spec covers *why*.
+> **Wind-back, 2026-05-16.** The earlier (v0) pipeline tried to do too much — regex-driven paragraph detection, outline-based heading claims, page-break continuation merging, reference resolution, glossary extraction. On real documents (Approved Document B Vol 1) the conventions didn't hold tightly enough; paragraphs were stolen as headings via outline substring matches, continuations were misclassified on page breaks, and the title page / contents page silently dropped out. The pipeline was wound back to "extract every block, classify nothing" so the human can see what's actually there before declaring how to chunk it. The `Chunk` / `TOC` / `Glossary` / `Reference` models are preserved in `schemas.py` for the day a manual-rules-driven chunking stage is reintroduced as an opt-in step.
+
+The full design spec lives in [`docs/approach.md`](docs/approach.md) but predates the wind-back — read it for historical context, not as the current target.
 
 ## Repo structure
 
@@ -35,17 +37,16 @@ regula/
   output/                  # generated artifacts (gitignored)
 ```
 
-## Stages (current target)
+## Stages (current)
 
-1. `parse` — Docling for structure, PyMuPDF for links/outline/geometry.
-2. `chunk` — emit chunk records from the parsed tree.
-3. `resolve_references` — hyperlink pass + regex pass; deduplicate.
-4. `build_toc` — TOC from PDF outline, cross-checked against headings.
-5. `extract_glossary` — defined-term lookup, back-fill `defined_terms_used`.
-6. `validate` — health checks against config thresholds.
-7. `finalise` — assemble final artifacts, write `document.json` with run metadata.
+1. `parse` — PyMuPDF reads the PDF: pages, flat element list with font signals, hyperlinks, raster images, outline. Written to `intermediate/parse/`.
+2. `extract_blocks` — converts parser elements into typed `Block` records. Computes a char-weighted median body font size, then assigns each block an advisory `region` (from y-position) and `looks_like` (from font + bold/italic). No filtering, no merging, no classification beyond the hints.
+3. `validate` — advisory metrics (blocks per page, region breakdown, link kinds) + per-artifact JSON Schema conformance. Only the schema check can fail the run.
+4. `finalise` — copies artifacts to the output root.
 
-Each stage has the signature `stage(input_dir, output_dir, config) -> StageReport`, reads from disk, writes to disk, and can be re-run independently.
+Each stage has the signature `run(output_dir, config) -> StageReport`, reads from disk, writes to disk, and can be re-run independently.
+
+The deleted v0 stages (`chunk`, `resolve_references`, `build_toc`, `extract_glossary`) are gone. Don't reintroduce them without explicit direction — the user wants to define document-specific rules manually after reviewing blocks.
 
 ## The output contract — where to read about it
 
@@ -57,17 +58,18 @@ Three documents describe the contract at different levels of detail:
 
 ## Output directory
 
-For every successfully ingested document the pipeline produces:
-
 ```
 output/<doc_id>/
-  document.json
-  toc.json
-  chunks.jsonl
-  glossary.json
+  blocks.jsonl            # one Block per line
+  pages.json              # per-page geometry
+  links.json              # PDF hyperlinks
+  outline.json            # PDF outline as parser reports it
+  document.json           # run metadata
+  validation_report.json  # advisory health metrics
+  deferred.json           # capabilities not yet built
+  preview.html            # diagnostic page-oriented preview
   assets/
   intermediate/
-  validation_report.json
   run.log
 ```
 
@@ -94,16 +96,12 @@ Run `pytest` to execute the suite. Stage-isolated tests should not require the r
 
 ## Output contract invariants
 
-The schema in `src/regula/schemas.py` is the contract. A small number of cross-model invariants must hold for every successful run; they are enforced by helper functions in the same module and re-checked by Stage 6 (`validate`) on real output. Treat any new query pattern in downstream code as a candidate for being expressed against these invariants rather than re-derived.
+- **Coordinate convention is frozen.** All bboxes are PDF userspace points (1/72 inch), origin **top-left**, y increasing downward. Recorded in `DocumentMeta.coordinate_convention`, the YAML `sourcing:` block, and module-level documentation in `schemas.py`.
+- **`Block.block_id` is deterministic and unique.** Format: `<doc_id>:p<page>:b<reading_order_index>`. The Pydantic validator enforces this — same PDF + same `doc_id` → same `block_id`s every time.
+- **`reading_order_index` is per-page, 0..N-1, contiguous.** It's what the parser returned (PyMuPDF's `sort=True` reading order). The walker doesn't reorder.
+- **Advisory hints are never load-bearing.** `region` and `looks_like` are computed from position and font alone. They surface in the preview as badges; nothing in the pipeline filters or groups on them. If downstream code wants to drop "footer" blocks, the human writes that rule explicitly — the extractor never does it.
 
-- **Coordinate convention is frozen.** All bboxes are PDF userspace points (1/72 inch), origin **top-left**, y increasing downward. The convention is recorded in three independent places — `DocumentMeta.coordinate_convention`, the YAML `sourcing:` block, and module-level documentation in `schemas.py`. Never re-derive bbox orientation from heuristics.
-- **`order_index` is the only authoritative reading order.** Walking chunks sorted by `order_index` reproduces the document. Never sort by `page_start + bbox.y` at query time — multi-column layouts and figure interleaving break that. Stage `chunk` is where `order_index` is assigned; nothing downstream is allowed to change it.
-- **Section containment uses IDs, not labels.** Use `Chunk.parent_section_id` or `Chunk.section_path_ids` for "is X inside section Y" queries. Use `TOCEntry.first_order_index`..`last_order_index` for range queries ("all chunks in §2.4", "between §2.4 and §2.7"). Never label-match on `section_path` / `breadcrumb` — those are display strings.
-- **Cross-references are emitted on the source chunk.** `Chunk.references_out` is the source of truth for every edge. The inverted backlink index lives in `references_index.json` (a Stage 3 sidecar); backlinks are not denormalised onto chunks.
-- **Source spans must be exact.** Every `SourceSpan` must address a non-empty slice of `chunk.text` (`text_offset_start..text_offset_end`) and a positive-area page region. This is what makes "exactly which region of the PDF produced this character" recoverable.
-- **Asset linkage is bidirectional.** A `caption` chunk's `caption_target_id` must point at a `table`/`diagram` chunk whose `captioned_by_id` points back. Tables and diagrams must carry an `asset_path`.
-
-The invariant helpers — `assert_reading_order_valid`, `assert_section_windows_consistent`, `assert_asset_linkage_bidirectional`, `assert_source_spans_in_bounds` — are public functions on `regula.schemas`. Use them whenever building or consuming chunks. Stage 6 calls the same helpers; defining the rules once means consumer code and validator code can't drift apart.
+The legacy `Chunk` / `TOC` / `Glossary` / `Reference` invariant helpers (`assert_reading_order_valid`, `assert_section_windows_consistent`, etc.) still exist in `schemas.py` but are unused — they'll come back when chunking does.
 
 ## JSON Schema export
 
@@ -117,26 +115,10 @@ uv run regula export-schemas --out schemas/
 
 ## Common pitfalls
 
-- Adding document-specific logic to a stage instead of the config. (See first convention.)
-- Sorting chunks by page+bbox instead of `order_index`. (See "Output contract invariants".)
-- Label-matching on `section_path` for retrieval. Use `section_path_ids` / `parent_section_id` / TOC windows.
-- Modifying a Pydantic model in `schemas.py` without re-exporting `schemas/*.schema.json`. The drift test will catch this, but the PR review should catch it first.
+- **Reintroducing classification heuristics.** The wind-back was deliberate — don't add regex-driven paragraph detection, outline-based heading claims, or merging rules without explicit user direction. Advisory hints (`region`, `looks_like`) are the limit; nothing acts on them in-pipeline.
+- **Filtering blocks at extraction time.** Even "obviously noise" blocks (running headers, page numbers) must appear in `blocks.jsonl`. Ignore-rules are a downstream concern.
+- Modifying a Pydantic model in `schemas.py` without re-exporting `schemas/*.schema.json`. The drift test catches this; the PR review should catch it first.
 - Reading from `intermediate/` directories outside the immediate predecessor stage.
 - Mutating shared state across stages — stages communicate via disk artifacts only.
 - Silently swallowing malformed input. Raise.
 - Forgetting to hash the config and source PDF into `document.json` — downstream consumers rely on these hashes to detect when reprocessing is needed.
-- Over-trusting the regex pass for references; the hyperlink pass is authoritative when both fire on the same pair.
-- Treating the chunk schema as flexible. Document-specific fields go under the freeform `attributes` block; the top-level schema does not change per document.
-
-## Definition of done (v1)
-
-The spec's DoD is the source of truth ([`docs/approach.md`](docs/approach.md)), summarised:
-
-1. `regula ingest --config configs/adb-vol1.yaml` runs end-to-end without crashes and produces the full output contract.
-2. Validation thresholds on ADB Vol 1 are met (≥95% internal ref resolution, ≥98% page coverage, schema pass).
-3. The reproducibility test passes.
-4. The golden-file test on the synthetic fixture passes.
-5. A second config runs through the pipeline with **no code changes**.
-6. All output files validate against their JSON Schemas.
-
-Pipeline correctness is what v1 proves. Judgement calls about whether the ADB chunks are "good" are a downstream concern.

@@ -1,0 +1,124 @@
+{
+  "$defs": {
+    "BlockLooksLike": {
+      "description": "Visual-signal-only guess at what a block resembles. Strictly\nadvisory: nothing downstream filters or groups by this value. The\nuser can sort/filter the preview by it to spot patterns.",
+      "enum": [
+        "large_text",
+        "small_text",
+        "emphasis",
+        "body",
+        "unknown"
+      ],
+      "title": "BlockLooksLike",
+      "type": "string"
+    },
+    "BlockRegion": {
+      "description": "Where a block sits on the page — derived from y-position only.\nAdvisory: a \"footer\"-region block isn't filtered out, it's just\nflagged so the user can spot running-footer patterns at a glance.",
+      "enum": [
+        "header",
+        "footer",
+        "margin",
+        "body"
+      ],
+      "title": "BlockRegion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One text block from one page, as the parser saw it.\n\nBlocks are deliberately unclassified — no \"paragraph\", no \"heading\",\nno merging across page breaks. The pipeline's job is to extract;\nclassification and grouping happen downstream once the user has\nspotted what to ignore in the preview.",
+  "properties": {
+    "bbox": {
+      "description": "Bounding box (x0, y0, x1, y1) in PDF points, top-left origin.",
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "title": "Bbox",
+      "type": "array"
+    },
+    "block_id": {
+      "description": "Deterministic identifier of the form ``<doc_id>:p<page>:b<reading_order_index>`` — e.g. ``adb1-2022:p3:b7``. Stable across runs on the same PDF.",
+      "title": "Block Id",
+      "type": "string"
+    },
+    "doc_id": {
+      "description": "The document this block belongs to.",
+      "title": "Doc Id",
+      "type": "string"
+    },
+    "font_name": {
+      "description": "Font name of the first span — e.g. 'Helvetica-Bold'.",
+      "title": "Font Name",
+      "type": "string"
+    },
+    "font_size": {
+      "description": "Font size of the first span in the block, in PDF points.",
+      "minimum": 0,
+      "title": "Font Size",
+      "type": "number"
+    },
+    "is_bold": {
+      "description": "Whether the first span has the bold flag.",
+      "title": "Is Bold",
+      "type": "boolean"
+    },
+    "is_italic": {
+      "description": "Whether the first span has the italic flag.",
+      "title": "Is Italic",
+      "type": "boolean"
+    },
+    "looks_like": {
+      "$ref": "#/$defs/BlockLooksLike",
+      "description": "Advisory: a visual-signal-only guess at what kind of text this is. Based on font size relative to the document's char-weighted median body size, plus bold/italic flags. Strictly advisory."
+    },
+    "page": {
+      "description": "1-indexed page number.",
+      "minimum": 1,
+      "title": "Page",
+      "type": "integer"
+    },
+    "reading_order_index": {
+      "description": "Position within the page in the parser's reading order. 0-indexed; unique per page.",
+      "minimum": 0,
+      "title": "Reading Order Index",
+      "type": "integer"
+    },
+    "region": {
+      "$ref": "#/$defs/BlockRegion",
+      "description": "Advisory: where on the page this block sits. Computed from y-position relative to page height. Never used to filter anything — it's there so the user can spot header/footer patterns in the preview."
+    },
+    "text": {
+      "description": "The block's textual content as the parser returned it.",
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "block_id",
+    "doc_id",
+    "page",
+    "reading_order_index",
+    "bbox",
+    "text",
+    "font_size",
+    "font_name",
+    "is_bold",
+    "is_italic",
+    "region",
+    "looks_like"
+  ],
+  "title": "Block",
+  "type": "object"
+}

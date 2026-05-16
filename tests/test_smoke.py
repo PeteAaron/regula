@@ -22,5 +22,5 @@ def test_cli_help() -> None:
 
 def test_cli_lists_commands() -> None:
     result = runner.invoke(app, ["--help"])
-    for cmd in ("ingest", "stage", "validate", "preview", "diff"):
+    for cmd in ("ingest", "stage", "inspect", "diff"):
         assert cmd in result.stdout
