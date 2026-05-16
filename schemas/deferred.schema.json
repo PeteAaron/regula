@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "DeferredFeature": {
+      "additionalProperties": false,
+      "description": "A capability the pipeline knows about but does not yet implement.\n\nWritten to ``deferred.json`` on every run so that downstream consumers\n(and humans reviewing output) can tell the difference between\n\"0 tables were emitted because there are none\" and\n\"0 tables were emitted because the table extractor isn't built yet\".\n\n``observed_count`` is populated when a stage *saw* but intentionally\n*skipped* something (e.g. images detected by the parser but not yet\nemitted as diagram chunks). A non-zero value is a useful signal that\nimplementing the feature would materially change this document's\noutput. ``None`` means the run produced no signal either way.",
+      "properties": {
+        "description": {
+          "description": "One-sentence summary of what's not (yet) implemented.",
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "description": "Stable identifier — e.g. 'diagram_chunks'.",
+          "title": "Name",
+          "type": "string"
+        },
+        "observed_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "If a stage detected candidate inputs but skipped them, the count goes here. ``None`` if the run had nothing to report.",
+          "title": "Observed Count"
+        },
+        "target_phase": {
+          "description": "Roadmap phase that will land this — e.g. 'Phase 5'.",
+          "title": "Target Phase",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "target_phase"
+      ],
+      "title": "DeferredFeature",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Sidecar container written to ``deferred.json``.",
+  "properties": {
+    "features": {
+      "description": "One entry per deferred capability for this run.",
+      "items": {
+        "$ref": "#/$defs/DeferredFeature"
+      },
+      "title": "Features",
+      "type": "array"
+    },
+    "generated_at": {
+      "description": "UTC timestamp.",
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "features",
+    "generated_at"
+  ],
+  "title": "DeferredFeatureList",
+  "type": "object"
+}

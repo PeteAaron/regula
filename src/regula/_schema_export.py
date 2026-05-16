@@ -15,6 +15,7 @@ from regula.config import Config
 from regula.schemas import (
     TOC,
     Chunk,
+    DeferredFeatureList,
     DocumentMeta,
     Glossary,
     Pages,
@@ -33,6 +34,7 @@ SCHEMA_MODELS: dict[str, type] = {
     "stage_report": StageReport,
     "pages": Pages,
     "references_index": ReferencesIndex,
+    "deferred": DeferredFeatureList,
 }
 
 

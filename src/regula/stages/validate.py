@@ -54,6 +54,10 @@ _ARTIFACTS_TO_CHECK: list[tuple[str, str, str]] = [
         "references_index.json",
     ),
     ("pages", "intermediate/parse/pages.json", "pages.json"),
+    # deferred.json is written by the orchestrator after finalise, so the
+    # intermediate path is the same as the root path. Schema check still
+    # runs post-finalise when --validate-only re-runs against the output.
+    ("deferred", "deferred.json", "deferred.json"),
 ]
 
 

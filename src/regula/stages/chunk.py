@@ -117,7 +117,22 @@ def _parser_identifier(tree: dict[str, Any]) -> str:
 
 
 def walk(tree: dict[str, Any], cfg: Config) -> list[Chunk]:
-    """Walk parsed elements in reading order and produce Chunks."""
+    """Walk parsed elements in reading order and produce Chunks.
+
+    Kept as a thin wrapper around :func:`walk_with_stats` so tests that
+    only care about the chunks can stay terse.
+    """
+    chunks, _ = walk_with_stats(tree, cfg)
+    return chunks
+
+
+def walk_with_stats(
+    tree: dict[str, Any], cfg: Config
+) -> tuple[list[Chunk], dict[str, int]]:
+    """Same as :func:`walk` but also returns counters for deferred
+    features the walker intentionally skipped (images, unclassified
+    text). These flow into the stage report and from there into
+    ``deferred.json``."""
     elements: list[dict[str, Any]] = tree.get("elements", [])
     outline: list[dict[str, Any]] = tree.get("outline", [])
 
@@ -135,6 +150,7 @@ def walk(tree: dict[str, Any], cfg: Config) -> list[Chunk]:
     stack_levels: list[int] = []
     order_index = 0
     last_chunk: Chunk | None = None
+    deferred_counts: dict[str, int] = {}
 
     glossary_section_norm = (
         cfg.references.glossary_section.strip().lower()
@@ -267,14 +283,23 @@ def walk(tree: dict[str, Any], cfg: Config) -> list[Chunk]:
             last_chunk = entry
             continue
 
-        # Unclassified — log and skip.
+        # Unclassified — log and skip. Counted so finalise can record
+        # the gap in deferred.json.
+        deferred_counts["unclassified_text"] = (
+            deferred_counts.get("unclassified_text", 0) + 1
+        )
         log.warning(
             "chunk.unclassified",
             page=elem["page"],
             preview=text[:80],
         )
 
-    return chunks
+    # Images detected by the parser but not yet emitted as chunks.
+    n_images = len(tree.get("images", []))
+    if n_images:
+        deferred_counts["images_skipped"] = n_images
+
+    return chunks, deferred_counts
 
 
 def run(output_dir: Path, cfg: Config) -> StageReport:
@@ -295,7 +320,7 @@ def run(output_dir: Path, cfg: Config) -> StageReport:
     tree = json.loads((parse_dir / "tree.json").read_text(encoding="utf-8"))
     log.info("chunk.start", elements=len(tree.get("elements", [])))
 
-    chunks = walk(tree, cfg)
+    chunks, deferred_counts = walk_with_stats(tree, cfg)
 
     with (stage_dir / "chunks.jsonl").open("w", encoding="utf-8") as f:
         for c in chunks:
@@ -312,6 +337,7 @@ def run(output_dir: Path, cfg: Config) -> StageReport:
         headings=n_heading,
         paragraphs=n_para,
         continuations_merged=n_continuations,
+        **{f"deferred_{k}": v for k, v in deferred_counts.items()},
     )
     return StageReport(
         stage=NAME,
@@ -324,5 +350,6 @@ def run(output_dir: Path, cfg: Config) -> StageReport:
             "section_headings": n_heading,
             "paragraphs": n_para,
             "continuations_merged": n_continuations,
+            **deferred_counts,
         },
     )

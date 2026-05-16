@@ -657,6 +657,51 @@ class ValidationReport(BaseModel):
     generated_at: datetime = Field(description="UTC timestamp when validation ran.")
 
 
+class DeferredFeature(BaseModel):
+    """A capability the pipeline knows about but does not yet implement.
+
+    Written to ``deferred.json`` on every run so that downstream consumers
+    (and humans reviewing output) can tell the difference between
+    "0 tables were emitted because there are none" and
+    "0 tables were emitted because the table extractor isn't built yet".
+
+    ``observed_count`` is populated when a stage *saw* but intentionally
+    *skipped* something (e.g. images detected by the parser but not yet
+    emitted as diagram chunks). A non-zero value is a useful signal that
+    implementing the feature would materially change this document's
+    output. ``None`` means the run produced no signal either way.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(description="Stable identifier — e.g. 'diagram_chunks'.")
+    description: str = Field(
+        description="One-sentence summary of what's not (yet) implemented."
+    )
+    target_phase: str = Field(
+        description="Roadmap phase that will land this — e.g. 'Phase 5'."
+    )
+    observed_count: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "If a stage detected candidate inputs but skipped them, the "
+            "count goes here. ``None`` if the run had nothing to report."
+        ),
+    )
+
+
+class DeferredFeatureList(BaseModel):
+    """Sidecar container written to ``deferred.json``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    features: list[DeferredFeature] = Field(
+        description="One entry per deferred capability for this run."
+    )
+    generated_at: datetime = Field(description="UTC timestamp.")
+
+
 class DocumentMeta(BaseModel):
     """Top-level run metadata written to ``document.json``.
 
@@ -706,6 +751,13 @@ class DocumentMeta(BaseModel):
         description=(
             "Convention for all bboxes in this run's output. Frozen at "
             "'pdf_pt_top_left' (PDF points, top-left origin) for now."
+        ),
+    )
+    deferred_features: list[DeferredFeature] = Field(
+        default_factory=list,
+        description=(
+            "Capabilities not yet implemented. Mirrors ``deferred.json`` "
+            "so reviewers see at a glance what isn't (yet) covered."
         ),
     )
 
